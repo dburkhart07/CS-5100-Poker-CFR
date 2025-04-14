@@ -1,7 +1,5 @@
 import numpy as np
 import clubs
-import os
-import sys
 from collections import defaultdict
 
 # Import all agents and their training functions
@@ -17,19 +15,47 @@ from mccfr_n_player_basic_reg import train_mccfr_n_player_basic_reg
 from mccfr_n_player_complex import MCCFR_N_Player_Complex
 from mccfr_n_player_complex import train_n_player_cfr as train_mccfr_n_player_complex
 
+# Basic Agent definitions:
+class RandomAgent:
+    def __init__(self):
+        self.actions = ['fold', 'call', 'raise']
+
+    def select_action(self):
+        return np.random.choice(self.actions)
+    
+    def determine_bet_size(self, pot_size, min_raise, stack_size, street=None):
+        if street == 'preflop':
+            return min(stack_size, max(min_raise * 2, pot_size // 2))
+        elif street == 'flop':
+            return min(stack_size, max(min_raise * 1.5, pot_size // 3))
+        else:
+            return min(stack_size, max(min_raise, pot_size // 2))
+        
+
+class AggressiveAgent:
+    def __init__(self):
+        self.actions = ['fold', 'call', 'raise']
+
+    def select_action(self):
+        probabilities = [0.1, 0.1, 0.8]
+        
+        return np.random.choice(self.actions, p=probabilities)
+        
 
 class NPlayerGameSimulator:
-    def __init__(self, num_players=4, train_iters=10000):
+    def __init__(self, num_players=4, train_iters=1000):
         self.num_players = num_players
         self.blinds = [1, 2] + [0] * (num_players - 2)
         self.train_iters = train_iters
 
         # Initialize all agents
         self.agents = {
+            'Aggressive_Agent': AggressiveAgent(),
             'CFR': CFRNPlayerAgent(),
             'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
             'MCCFR_Basic_Reg': MCCFR_N_Player_Optimized_Reg(),
-            'MCCFR_Complex': MCCFR_N_Player_Complex()
+            'MCCFR_Complex': MCCFR_N_Player_Complex(),
+            'Random_Agent': RandomAgent(),
         }
 
         # Train all agents
@@ -70,8 +96,10 @@ class NPlayerGameSimulator:
         obs = self.dealer.reset(reset_stacks=True)
         done = [False] * self.num_players
 
-        agent_order = ['CFR', 'MCCFR_Basic_Bet', 'MCCFR_Basic_Reg', 'MCCFR_Complex']
+        agent_order = list(self.agents.keys())
         agent_assignments = {i: self.agents[agent_order[i]] for i in range(self.num_players)}
+
+        actions_taken = [None] * self.num_players
 
         while not all(done) and obs['action'] not in [-1, None]:
             if obs['action'] is None:
@@ -85,14 +113,14 @@ class NPlayerGameSimulator:
                 continue
 
             agent = agent_assignments[current_player_idx]
-            stacks = obs['stacks']
+            #stacks = tuple(obs['stacks'])
             current_stack = obs['stacks'][current_player_idx]
             hole = obs['hole_cards']
             board = obs['community_cards']
             
             pot_size = obs['pot']
             min_raise = obs['min_raise']
-            street_commits = obs['street_commits']
+            street_commits = tuple(obs['street_commits'])
 
             street = (
                 'preflop' if len(board) == 0 else
@@ -101,8 +129,12 @@ class NPlayerGameSimulator:
             )
 
             try:
-                if isinstance(agent, MCCFR_N_Player_Complex):          
-                    info_set = (str(hole), str(board), pot_size, street, tuple(stacks), tuple(street_commits))
+                if isinstance(agent, MCCFR_N_Player_Complex):
+                    for idx, action in enumerate(actions_taken):
+                        if idx != current_player_idx and action is not None:
+                            agent.update_opponent_profile(idx, action)
+
+                    info_set = agent.abstract_info_set(obs, hole, board, pot_size, street, street_commits, current_player_idx)
                     
                     action = agent.sample_action(info_set)
                     
@@ -121,9 +153,7 @@ class NPlayerGameSimulator:
                 elif isinstance(agent, MCCFR_N_Player_Optimized_Bet):
                     max_possible_raise = min(obs.get('max_raise', current_stack), current_stack)
                     
-                    # Make sure hole and board are in the right format for get_hand_bucket
-                    hand_bucket = agent.get_hand_bucket(hole, board, evaluator)
-                    info_set = (hand_bucket, street, tuple(stacks), tuple(street_commits))
+                    info_set = agent.abstract_info_set(obs, hole, board, pot_size, street, street_commits, current_player_idx)
                     
                     # Set position for bet sizing
                     agent.position = current_player_idx
@@ -143,8 +173,7 @@ class NPlayerGameSimulator:
                 elif isinstance(agent, MCCFR_N_Player_Optimized_Reg):
                     max_possible_raise = min(obs.get('max_raise', current_stack), current_stack)
                     
-                    hand_bucket = agent.get_hand_bucket(hole, board, evaluator)
-                    info_set = (hand_bucket, street, tuple(stacks), tuple(street_commits))
+                    info_set = agent.abstract_info_set(obs, hole, board, pot_size, street, street_commits, current_player_idx)
                     
                     # Set position for bet sizing
                     agent.position = current_player_idx
@@ -156,15 +185,36 @@ class NPlayerGameSimulator:
                         bet = min(obs['call'], current_stack)
                     else:
                         bet = agent.determine_bet_size(pot_size, min_raise, current_stack)
+                    
 
                 elif isinstance(agent, CFRNPlayerAgent):
                     info_set = agent.abstract_info_set(obs, current_player_idx)  # Pass both obs and player_idx
                     action = agent.select_action(info_set)
                     bet = agent.get_bet_amount(obs, current_player_idx, action)  # Pass all required parameters
 
-                # Debug print to see what bet we're making
-                # print(f"Player {current_player_idx} ({agent_order[current_player_idx]}) action: {action}, bet: {bet}")
-                
+
+                elif isinstance(agent, RandomAgent) or isinstance(agent, AggressiveAgent):
+                    action = agent.select_action()
+
+                    if action == 'fold':
+                        bet = -1
+                    elif action == 'call':
+                        bet = min(obs['call'], current_stack)
+                    else:
+                        if isinstance(agent, RandomAgent):
+                            max_possible_raise = min(obs['max_raise'], current_stack)
+                            if obs['min_raise'] > max_possible_raise:
+                                bet = min(obs['call'], current_stack)
+                            else:
+                                bet = agent.determine_bet_size(pot_size, obs['min_raise'], current_stack)
+                                bet = min(bet, max_possible_raise)
+                        else:
+                            bet = pot_size * 0.75
+
+                #print(f"current_player_idx: {current_player_idx}")
+                action_idx = agent.actions.index(action)
+                actions_taken[current_player_idx] = action_idx
+
                 obs, rewards, done = self.dealer.step(bet)
 
             except Exception as e:
@@ -178,7 +228,6 @@ class NPlayerGameSimulator:
                 #         print(f"hole is iterable, length: {len(hole)}")
                 #     else:
                 #         print("hole is not iterable")
-                
                 self.init_dealer()
                 return None
 
@@ -187,7 +236,7 @@ class NPlayerGameSimulator:
     def simulate_games(self, episodes=10000):
         total_rewards = defaultdict(float)
         completed_episodes = 0
-        agent_names = ['CFR', 'MCCFR_Basic_Bet', 'MCCFR_Basic_Reg', 'MCCFR_Complex']
+        agent_names = list(self.agents.keys())
 
         for episode in range(1, episodes + 1):
             rewards = self.play_episode()
@@ -215,7 +264,7 @@ class NPlayerGameSimulator:
 
         return avg_rewards
 
-
-simulator = NPlayerGameSimulator(num_players=4)
-print("\nStarting 3-player simulation...")
-avg_rewards = simulator.simulate_games(episodes=20000)
+n = 6
+simulator = NPlayerGameSimulator(num_players=n)
+print(f"\nStarting {n}-player simulation...")
+avg_rewards = simulator.simulate_games(episodes=5000)

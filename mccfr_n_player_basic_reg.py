@@ -15,6 +15,8 @@ class MCCFR_N_Player_Optimized_Reg:
         self.bucket_size = bucket_size
         self.use_bluffing = use_bluffing
         self.position = position if position is not None else 0  # Default position to 0 if None
+        self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
+
 
     def get_strategy(self, info_set, reach_prob):
         regrets = self.regrets[info_set]
@@ -89,6 +91,20 @@ class MCCFR_N_Player_Optimized_Reg:
         
         return raise_amount
 
+    def abstract_info_set(self, obs, hole, community, pot_size, street, street_commits, player_idx):
+        position = player_idx
+        stack_bucket = int(obs['stacks'][player_idx] / 50)  # Abstract stack into buckets
+        pot_bucket = int(pot_size / 50) # Abstract pot size into buckets
+
+        # Abstract hand strength into buckets (~ 32 levels per bucket)
+        if street == 'preflop':
+            hand_strength_bucket = 0
+        else:
+            raw_hand_strength = self.evaluator.evaluate(hole, list(community))
+            hand_strength_bucket = int(raw_hand_strength / 250)
+
+        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
+
 def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000, verbose=True):
     blinds = [1, 2] + [0] * (num_players - 2)
 
@@ -115,7 +131,6 @@ def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000, verb
 
     try:
         dealer = reset_dealer()
-        evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
     except Exception as e:
         print(f"Failed to initialize dealer or evaluator: {str(e)}")
         return
@@ -157,10 +172,7 @@ def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000, verb
                              'flop' if len(board) == 3 else \
                              'turn' if len(board) == 4 else 'river'
 
-                    hand_bucket = agent.get_hand_bucket(hole, board, evaluator)
-                    
-                    # Create a hashable info_set
-                    info_set = (hand_bucket, street, stacks, street_commits)
+                    info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
                     
                     # For training, treat index 0 as the trained player
                     is_trained_player = (current_player_idx == 0)
@@ -171,8 +183,7 @@ def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000, verb
                         bet = -1
                     elif action == 'call':
                         bet = min(obs['call'], stacks[current_player_idx])
-                    else:  # raise
-                        strength = evaluator.evaluate(hole, board)
+                    else:
                         # Set the player's position for bet sizing
                         agent.position = current_player_idx
                         bet = agent.determine_bet_size(pot, min_raise, stacks[current_player_idx])
@@ -233,7 +244,6 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
         )
 
     dealer = reset_dealer()
-    evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
     total_rewards = 0
     completed_episodes = 0
 
@@ -266,8 +276,7 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
                          'turn' if len(board) == 4 else 'river'
 
                 if current_player_idx == trained_player_idx:
-                    hand_bucket = agent.get_hand_bucket(hole, board, evaluator)
-                    info_set = (hand_bucket, street, stacks, street_commits)
+                    info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
                     # Set position for bet sizing
                     agent.position = current_player_idx
                     action = agent.select_action(info_set, 1.0)

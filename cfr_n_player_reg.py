@@ -55,7 +55,7 @@ class CFRNPlayerAgent:
         community = obs['community_cards']
         street = ['preflop', 'flop', 'turn', 'river'][len(community) - 0 if len(community) == 0 else len(community) - 2]
         position = player_idx
-        stack_bucket = int(obs['stacks'][player_idx] / 50)  # Abstract stack into buckets
+        stack_bucket = int(obs['stacks'][player_idx] / 10)  # Abstract stack into buckets
         pot_bucket = int(obs['pot'] / 50) # Abstract pot size into buckets
 
         if street == 'preflop':
