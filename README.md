@@ -1,2 +1,2 @@
 # CS-5100-Poker-CFR
-https://github.com/dburkhart07/Poker-CFR.git
+Final CS 5100 Project: A Counterfactual regret minimization approach to creating an optimal Texas Hold'em Poker agent.
