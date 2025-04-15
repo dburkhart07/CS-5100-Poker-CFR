@@ -10,10 +10,10 @@ class MCCFR_N_Player_Complex:
         self.tau = tau
         self.beta = beta
         self.actions = ['fold', 'call', 'raise']
-        self.opponent_tendencies = {}
         self.decay_rate = decay_rate
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
-        self.opponent_profiles = {} # Dict[player_idx] = [folds, calls, raises]
+        # Dictionary for each opponent index of their folds, calls, and raises
+        self.opponent_profiles = {}
 
     def get_strategy(self, info_set):
         if info_set not in self.strategy:
@@ -35,29 +35,34 @@ class MCCFR_N_Player_Complex:
         strategy = self.get_strategy(info_set)
         opp_tends = self.opponent_profiles.get(info_set, [1, 1, 1])
 
+        # Get the tendency for each action
         fold_tendency = (opp_tends[0] + 1) / (sum(opp_tends) + 1)
         call_tendency = (opp_tends[1] + 1) / (sum(opp_tends) + 1)
         raise_tendency = (opp_tends[2] + 1) / (sum(opp_tends) + 1)
 
+        # Small probability to bluff someone who folds too much
         fold_bluff_prob = max(0.15, fold_tendency / 2)
         if np.random.random() < fold_bluff_prob:
             return 'raise'
-
+        
+        # Probability to bluff someone who raises too much
         aggression_factor = raise_tendency / (call_tendency + raise_tendency + 1)
         aggression_bluff_prob = max(0.15, aggression_factor / 2)
         if np.random.random() < aggression_bluff_prob:
             return 'raise'
 
-        
+        # Action sampling
         total = np.sum(strategy)
         probabilities = [
             max(self.epsilon, self.beta + self.tau * strategy[a] / (self.beta + total)) 
             for a in range(len(self.actions))
         ]
         
-        probabilities[0] *= fold_tendency  # More likely to fold if the opponent folds more
-        probabilities[2] *= aggression_factor  # More likely to raise if opponent is aggressive
+        # Adjust probabilities for each tendency
+        probabilities[0] *= fold_tendency
+        probabilities[2] *= aggression_factor
 
+        # Normalize
         probabilities = np.array(probabilities) / np.sum(probabilities)
         
         return np.random.choice(self.actions, p=probabilities)
@@ -70,12 +75,8 @@ class MCCFR_N_Player_Complex:
         self.regrets[info_set] *= self.decay_rate
         self.regrets[info_set][action_idx] += regret
 
-        if info_set not in self.opponent_tendencies:
-            self.opponent_tendencies[info_set] = np.zeros(len(self.actions))
-        self.opponent_tendencies[info_set] *= self.decay_rate
-        self.opponent_tendencies[info_set][action_idx] += 1
-
     def compute_average_strategy(self):
+        # Average the entire strategy so far and assign that to be the new one
         for info_set in self.strategy_sum:
             normalizing_sum = np.sum(self.strategy_sum[info_set])
             if normalizing_sum > 1e-8:
@@ -83,6 +84,7 @@ class MCCFR_N_Player_Complex:
             else:
                 self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
 
+    # Relatively basic betting function
     def determine_bet_size(self, pot_size, min_raise, stack_size, street=None):
         if street == 'preflop':
             return min(stack_size, max(min_raise * 2, pot_size // 2))
@@ -91,7 +93,7 @@ class MCCFR_N_Player_Complex:
         else:
             return min(stack_size, max(min_raise, pot_size // 2))
 
-    def abstract_info_set(self, obs, hole, community, pot_size, street, street_commits, player_idx):
+    def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
         position = player_idx
         stack_bucket = int(obs['stacks'][player_idx] / 50)
         pot_bucket = int(pot_size / 50)
@@ -99,11 +101,12 @@ class MCCFR_N_Player_Complex:
         if street == 'preflop':
             hand_strength_bucket = 0
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole, list(community))
+            raw_hand_strength = self.evaluator.evaluate(hole, list(board))
             hand_strength_bucket = int(raw_hand_strength / 250)
 
         return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
     
+    # Update the opponent profiles based on the action they took
     def update_opponent_profile(self, player_idx, action_idx):
         if player_idx not in self.opponent_profiles:
             self.opponent_profiles[player_idx] = np.zeros(len(self.actions))
@@ -111,9 +114,6 @@ class MCCFR_N_Player_Complex:
         self.opponent_profiles[player_idx][action_idx] += 1
 
 
-    
-
-# TODO: POTENTIALLY CAN MAKE SOME CONVERGENCE CHECKER (AFTER 20 FAILURES TO DO BETTER UPDATE)
 def train_n_player_cfr(agent, num_players=4, iterations=100000):
     # Correct blinds configuration for 4 players: two blinds posted
     blinds = [1, 2] + [0] * (num_players - 2)
@@ -137,7 +137,6 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
     successful_iterations = 0
     
     while successful_iterations < iterations:
-        # print(successful_iterations)
         try:
             obs = dealer.reset(reset_stacks=True)
             histories = [[] for _ in range(num_players)]
@@ -151,16 +150,14 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
                     continue
                     
                 hole_cards = obs['hole_cards']
-                community_cards = obs['community_cards']
+                board = obs['community_cards']
                 pot_size = obs['pot']
                 stacks = tuple(obs['stacks'])
                 street_commits = tuple(obs['street_commits'])
                 
-                street = 'preflop' if len(community_cards) == 0 else \
-                         'flop' if len(community_cards) == 3 else \
-                         'turn' if len(community_cards) == 4 else 'river'
+                street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
 
-                info_set = agent.abstract_info_set(obs, hole_cards, community_cards, pot_size, street, street_commits, current_player_idx)
+                info_set = agent.abstract_info_set(obs, hole_cards, board, pot_size, street, street_commits, current_player_idx)
                 
                 action = agent.sample_action(info_set)
                 action_idx = agent.actions.index(action)
@@ -180,7 +177,7 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
                 
                 histories[current_player_idx].append((info_set, action_idx))
                 
-                # Log opponent behavior
+                # Update opponent behavior
                 for idx in range(num_players):
                     if idx != current_player_idx:
                         agent.update_opponent_profile(idx, action_idx)
@@ -202,6 +199,7 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
             successful_iterations += 1
                 
             if successful_iterations % 1000 == 0:
+                # Reset the dealer and compute average strategy every 1000 iterations
                 agent.compute_average_strategy()
                 dealer = clubs.poker.Dealer(
                     num_players=num_players, 
@@ -236,7 +234,8 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
                 num_cards_for_hand=5
             )
             continue
-    
+
+    # Compute the final average strategy at the end
     agent.compute_average_strategy()
 
 
@@ -268,9 +267,6 @@ def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_
             step_count = 0
             
             while not all(done) and obs['action'] != -1:
-                step_count += 1
-                if step_count > 100:  # Safeguard against infinite loops
-                    break
 
                 current_player_idx = obs['action']
                 
@@ -284,9 +280,7 @@ def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_
                 stacks = tuple(obs['stacks'])
                 street_commits = tuple(obs['street_commits'])
                 
-                street = 'preflop' if len(board) == 0 else \
-                         'flop' if len(board) == 3 else \
-                         'turn' if len(board) == 4 else 'river'
+                street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
                 
                 if current_player_idx == trained_player_idx:
                     info_set = agent.abstract_info_set(obs, hole_cards, board, pot_size, street, street_commits, current_player_idx)
@@ -335,10 +329,11 @@ def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_
 
 # NUM_PLAYERS = 4
 # agent = MCCFR_N_Player_Complex()
+
+# print("Training MCCFR agent")
+# train_n_player_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
     
-# train_n_player_cfr(agent, num_players=NUM_PLAYERS, iterations=10000)
-    
-# print("Evaluating...")
+# print("Evaluating MCCFR agent")
 # for _ in range(10):
 #     avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=10000, trained_player_idx=0)
-#     print(f"Average rewards after training MCCFR N Player Complex Agent: {avg_rewards}")
+#     print(f"Average rewards: {avg_rewards}")

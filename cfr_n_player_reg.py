@@ -1,14 +1,14 @@
 import numpy as np
-import random
 import clubs
+import random
 
 class CFRNPlayerAgent:
     def __init__(self):
         self.regrets = {}
         self.strategy = {}
-        self.opponent_tendencies = {}
         self.actions = ['fold', 'call', 'raise']
-        self.decay_rate = 0.98  # Slightly slower decay to retain useful history
+        # Decay rate for getting further into training
+        self.decay_rate = 0.95
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
 
     def get_strategy(self, info_set):
@@ -17,23 +17,27 @@ class CFRNPlayerAgent:
             self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
 
         regrets = self.regrets.get(info_set, np.zeros(len(self.actions)))
+        # Keep only positive regrets
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)
 
-        # Regret-matching strategy computation
+        # Regret-matching (update and normalize strategy based on regrets)
         if normalizing_sum > 0:
             strategy = positive_regrets / normalizing_sum
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
 
+        # Update strategy
         self.strategy[info_set] = strategy
         return strategy
 
     def select_action(self, info_set):
+        # Choose action based on current strategy probabilities (default probabilities if not seen yet)
         strategy = self.get_strategy(info_set)
         return np.random.choice(self.actions, p=strategy)
 
     def update_regrets(self, info_set, action_taken, actual_utility, all_utilities):
+        # Initialize if not persent
         if info_set not in self.regrets:
             self.regrets[info_set] = np.zeros(len(self.actions))
 
@@ -43,38 +47,25 @@ class CFRNPlayerAgent:
             regret = all_utilities[i] - actual_utility
             self.regrets[info_set][i] += regret
 
-    def update_opponent_tendencies(self, info_set, action_idx):
-        if info_set not in self.opponent_tendencies:
-            self.opponent_tendencies[info_set] = np.zeros(len(self.actions))
-
-        self.opponent_tendencies[info_set] *= self.decay_rate
-        self.opponent_tendencies[info_set][action_idx] += 1
-
+    # Create an abstract information set
     def abstract_info_set(self, obs, player_idx):
         hole_cards = obs['hole_cards']
-        community = obs['community_cards']
-        street = ['preflop', 'flop', 'turn', 'river'][len(community) - 0 if len(community) == 0 else len(community) - 2]
+        board = obs['community_cards']
+        street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
         position = player_idx
-        stack_bucket = int(obs['stacks'][player_idx] / 10)  # Abstract stack into buckets
-        pot_bucket = int(obs['pot'] / 50) # Abstract pot size into buckets
+        # Abstract the stack into buckets
+        stack_bucket = int(obs['stacks'][player_idx] / 10) 
+        # Abstract the pot size into buckets
+        pot_bucket = int(obs['pot'] / 50)
 
+        # Abstract the hand strength into buckets
         if street == 'preflop':
             hand_strength_bucket = 0
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole_cards, list(community))
+            raw_hand_strength = self.evaluator.evaluate(hole_cards, list(board))
             hand_strength_bucket = int(raw_hand_strength / 250)
 
         return (hand_strength_bucket, street, position, stack_bucket, pot_bucket)
-
-    def get_bet_amount(self, obs, player_idx, action):
-        if action == 'fold':
-            return -1
-        elif action == 'call':
-            return min(obs['call'], obs['stacks'][player_idx])
-        elif action == 'raise':
-            # Use a pot-size raise capped by player's stack
-            return min(obs['stacks'][player_idx], max(obs['min_raise'], obs['pot'] // 2))
-        return 0
 
 
 def train_cfr(agent, num_players=4, iterations=100000):
@@ -111,25 +102,33 @@ def train_cfr(agent, num_players=4, iterations=100000):
                 info_set = agent.abstract_info_set(obs, current_player)
                 action = agent.select_action(info_set)
                 action_idx = agent.actions.index(action)
-                bet = agent.get_bet_amount(obs, current_player, action)
+                
+                if action == 'fold':
+                    bet = -1
+                elif action == 'call':
+                    bet = min(obs['call'], obs['stacks'][current_player])
+                elif action == 'raise':
+                    # Use a pot-size raise capped by player's stack
+                    bet = min(obs['stacks'][current_player], max(obs['min_raise'], obs['pot'] // 2))
 
+                # Keep track of the history for each player
                 histories[current_player].append((info_set, action_idx))
                 obs, rewards, done = dealer.step(bet)
 
-            # Regret update after hand resolution
+            # Update regret after finishing a hand
             for player_idx in range(num_players):
                 final_reward = rewards[player_idx]
                 for info_set, action_idx in histories[player_idx]:
+                    # Actual reward for the player's action, negative everywhere else
                     utilities = [-final_reward if i != action_idx else final_reward for i in range(3)]
                     agent.update_regrets(info_set, action_idx, final_reward, utilities)
-                    agent.update_opponent_tendencies(info_set, action_idx)
 
+        # Skip over episode as soon as anything goes wrong
         except Exception:
             continue
 
 
 def evaluate_against_random(agent, num_players=4, episodes=1000):
-    from random import choice
 
     blinds = [1, 2] + [0] * (num_players - 2)
     dealer = clubs.poker.Dealer(
@@ -148,6 +147,7 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
         num_cards_for_hand=5
     )
 
+    # Keep track ofthe reward for the agent (player 0)
     total_reward = 0
 
     for episode in range(episodes):
@@ -158,37 +158,48 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
             while not all(done) and obs['action'] != -1:
                 current_player = obs['action']
 
-                if not obs['active'][current_player]:
-                    obs, _, done = dealer.step(0)
-                    continue
-
+                # Strategy for CFR agent
                 if current_player == 0:
-                    # CFR Agent plays as player 0
                     info_set = agent.abstract_info_set(obs, current_player)
                     action = agent.select_action(info_set)
-                    bet = agent.get_bet_amount(obs, current_player, action)
+
+                    if action == 'fold':
+                        bet = -1
+                    elif action == 'call':
+                        bet = min(obs['call'], obs['stacks'][current_player])
+                    elif action == 'raise':
+                        # Use a pot-size raise capped by player's stack
+                        bet = min(obs['stacks'][current_player], max(obs['min_raise'], obs['pot'] // 2))
+                # Strategy for random opponent
                 else:
-                    # Random opponent
-                    action = choice(['fold', 'call', 'raise'])
-                    bet = agent.get_bet_amount(obs, current_player, action)
+                    action = np.random.choice(['fold', 'call', 'raise'])
+                    if action == 'fold':
+                        bet = -1
+                    elif action == 'call':
+                        bet = min(obs['call'], obs['stacks'][current_player])
+                    elif action == 'raise':
+                        # Use a pot-size raise capped by player's stack
+                        bet = min(obs['stacks'][current_player], max(obs['min_raise'], obs['pot'] // 2))
 
                 obs, rewards, done = dealer.step(bet)
 
-            total_reward += rewards[0]  # Only track CFR agent's reward
+            # Accumulate player 0 reward
+            total_reward += rewards[0]
 
         except Exception:
             continue
 
+    # Compute and return average reward
     return total_reward / episodes
 
 
 # NUM_PLAYERS = 4
 # agent = CFRNPlayerAgent()
 
-# print("Training CFR agent...")
+# print("Training CFR agent")
 # train_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
 
-# print("Evaluating CFR agent...")
+# print("Evaluating CFR agent")
 # for _ in range(10):
 #     avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=3000)
 #     print(f"Average rewards: {avg_rewards}")

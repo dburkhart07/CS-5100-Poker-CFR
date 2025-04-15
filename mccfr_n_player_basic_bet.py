@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 class MCCFR_N_Player_Optimized_Bet:
-    def __init__(self, decay_rate=0.95, bucket_size=500, use_bluffing=True, position=None):
+    def __init__(self, decay_rate=0.95, bucket_size=500, use_bluffing=True):
         self.regrets = defaultdict(lambda: np.zeros(3))
         self.strategy_sum = defaultdict(lambda: np.zeros(3))
         self.strategy = defaultdict(lambda: np.ones(3)/3)
@@ -14,10 +14,9 @@ class MCCFR_N_Player_Optimized_Bet:
         self.decay_rate = decay_rate
         self.bucket_size = bucket_size
         self.use_bluffing = use_bluffing
-        self.position = position if position is not None else 0  # Default position to 0 if None
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
 
-    def get_strategy(self, info_set, reach_prob):
+    def get_strategy(self, info_set):
         regrets = self.regrets[info_set]
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)
@@ -27,69 +26,65 @@ class MCCFR_N_Player_Optimized_Bet:
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
 
-        self.strategy_sum[info_set] += reach_prob * strategy
+        self.strategy_sum[info_set] += strategy
         self.strategy[info_set] = strategy
         return strategy
 
-    def select_action(self, info_set, reach_prob, is_trained_player=True):
+    def select_action(self, info_set, is_trained_player=True):
+        # Generalized random possibilities (cater towards calling)
         if not is_trained_player:
-            # Simplified strategy for opponents during training
             return np.random.choice(self.actions, p=[0.2, 0.5, 0.3])
             
-        strategy = self.get_strategy(info_set, reach_prob)
+        strategy = self.get_strategy(info_set)
 
+        # Special bluffing
         if self.use_bluffing:
             total_actions = np.sum(self.opponent_tendencies[info_set])
+            # Only consider bluffing after having 10 actions to go off of
             if total_actions > 10:
+                # Bluff based on fold rate
                 fold_rate = self.opponent_tendencies[info_set][0] / (total_actions + 1e-6)
                 bluff_probability = min(0.3, fold_rate * 0.5)
-                if random.random() < bluff_probability:
+                if np.random.random() < bluff_probability:
                     return 'raise'
 
         return np.random.choice(self.actions, p=strategy)
 
     def update_regrets(self, info_set, action_idx, regret):
-        clipped_regret = np.clip(regret, -1000, 1000)
-        self.regrets[info_set][action_idx] += clipped_regret
+        self.regrets[info_set][action_idx] += regret
         self.opponent_tendencies[info_set] *= self.decay_rate
         self.opponent_tendencies[info_set][action_idx] += 1
 
-    def compute_strategy(self):
+    def compute_average_strategy(self):
+        # Average the entire strategy so far and assign that to be the new one
         for info_set in self.strategy_sum:
-            norm = np.sum(self.strategy_sum[info_set])
-            if norm > 0:
-                self.strategy[info_set] = self.strategy_sum[info_set] / norm
-
-    def determine_bet_size(self, hand_strength, pot_size, min_raise, stack_size, street):
-        try:
-            # Position-aware bet sizing with safe default
-            position = 0 if self.position is None else self.position
-            position_factor = 1.0 - (position / 10.0)  # Later positions bet more aggressively
-            
-            multipliers = {
-                'flop': [0.6, 0.5, 0.4, 0.3],
-                'turn': [0.7, 0.6, 0.5, 0.4],
-                'river': [0.8, 0.7, 0.6, 0.5]
-            }
-            thresholds = [500, 2000, 3000]
-            level = sum(hand_strength >= t for t in thresholds)
-            
-            if street == 'preflop':
-                base_bet = max(min_raise, pot_size * 0.5 * position_factor)
+            normalizing_sum = np.sum(self.strategy_sum[info_set])
+            if normalizing_sum > 1e-8:
+                self.strategy[info_set] = self.strategy_sum[info_set] / normalizing_sum
             else:
-                mult = multipliers.get(street, [0.5, 0.5, 0.5, 0.5])[min(level, 3)]  # Ensure level is within bounds
-                base_bet = pot_size * mult * position_factor
+                self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
+
+    # Implore customized betting strategy
+    def determine_bet_size(self, hand_strength, pot_size, min_raise, stack_size, street):      
+        multipliers = {
+            'flop': [0.6, 0.5, 0.4, 0.3],
+            'turn': [0.7, 0.6, 0.5, 0.4],
+            'river': [0.8, 0.7, 0.6, 0.5]
+        }
+        thresholds = [500, 2000, 3000]
+        level = sum(hand_strength >= t for t in thresholds)
             
-            # Ensure the bet is valid and within stack constraints
-            bet = min(stack_size, max(min_raise, int(base_bet)))
-            return bet
-        except Exception as e:
-            print(f"Error in determine_bet_size: {str(e)}")
-            # Return a safe default bet if there's an error
-            return min_raise
+        if street == 'preflop':
+            base_bet = max(min_raise, pot_size * 0.5)
+        else:
+            mult = multipliers.get(street, [0.5, 0.5, 0.5, 0.5])[min(level, 3)]  # Ensure level is within bounds
+            base_bet = pot_size * mult
+            
+        # Ensure the bet is valid and within stack constraints
+        bet = min(stack_size, max(min_raise, int(base_bet)))
+        return bet
         
-    def abstract_info_set(self, obs, hole, community, pot_size, street, street_commits, player_idx):
-        position = player_idx
+    def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
         stack_bucket = int(obs['stacks'][player_idx] / 50)  # Abstract stack into buckets
         pot_bucket = int(pot_size / 50) # Abstract pot size into buckets
 
@@ -97,133 +92,12 @@ class MCCFR_N_Player_Optimized_Bet:
         if street == 'preflop':
             hand_strength_bucket = 0
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole, list(community))
+            raw_hand_strength = self.evaluator.evaluate(hole, list(board))
             hand_strength_bucket = int(raw_hand_strength / 250)
 
-        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
+        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits)
 
-def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=100000, verbose=True):
-    blinds = [1, 2] + [0] * (num_players - 2)
-
-    def reset_dealer():
-        try:
-            return clubs.poker.Dealer(
-                num_players=num_players,
-                num_streets=4,
-                blinds=blinds,
-                antes=0,
-                raise_sizes='pot',
-                num_raises=float('inf'),
-                num_suits=4,
-                num_ranks=13,
-                num_hole_cards=2,
-                mandatory_num_hole_cards=0,
-                start_stack=200,
-                num_community_cards=[0, 3, 1, 1],
-                num_cards_for_hand=5
-            )
-        except Exception as e:
-            print(f"Error creating dealer: {str(e)}")
-            raise
-
-    try:
-        dealer = reset_dealer()
-        evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
-    except Exception as e:
-        print(f"Failed to initialize dealer or evaluator: {str(e)}")
-        return
-
-    successful_iterations = 0
-    max_retries = 5  # Maximum retries for each iteration if an error occurs
-
-    while successful_iterations < iterations:
-        retries = 0
-        success = False
-        
-        while not success and retries < max_retries:
-            
-            try:
-                obs = dealer.reset(reset_stacks=True)
-                histories = [[] for _ in range(num_players)]
-                done = [False] * num_players
-                step_count = 0
-                
-                while not all(done) and obs['action'] != -1:
-                    step_count += 1
-                    if step_count > 100:  # Safeguard against infinite loops
-                        break
-                        
-                    current_player_idx = obs['action']
-                    
-                    if not obs['active'][current_player_idx]:
-                        obs, rewards, done = dealer.step(-1)
-                        continue
-
-                    hole = obs['hole_cards']
-                    board = obs['community_cards']
-                    pot = obs['pot']
-                    stacks = tuple(obs['stacks'])
-                    min_raise = obs['min_raise']
-                    street_commits = tuple(obs['street_commits'])
-
-                    street = 'preflop' if len(board) == 0 else \
-                             'flop' if len(board) == 3 else \
-                             'turn' if len(board) == 4 else 'river'
-
-
-                    info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
-                    
-                    # For training, treat index 0 as the trained player
-                    is_trained_player = (current_player_idx == 0)
-                    action = agent.select_action(info_set, 1.0, is_trained_player)
-                    action_idx = agent.actions.index(action)
-
-                    if action == 'fold':
-                        bet = -1
-                    elif action == 'call':
-                        bet = min(obs['call'], stacks[current_player_idx])
-                    else:  # raise
-                        strength = evaluator.evaluate(hole, board)
-                        # Set the player's position for bet sizing
-                        agent.position = current_player_idx
-                        bet = agent.determine_bet_size(strength, pot, min_raise, stacks[current_player_idx], street)
-                        
-                    histories[current_player_idx].append((info_set, action_idx))
-                    obs, rewards, done = dealer.step(bet)
-                
-                # Check if the hand actually completed
-                if len(rewards) == num_players:
-                    for player_idx in range(num_players):
-                        for info_set, action_idx in histories[player_idx]:
-                            v_s = rewards[player_idx]
-                            strategy = agent.strategy.get(info_set, np.ones(3)/3)
-                            v_s_prime = np.dot(strategy, agent.regrets[info_set])
-                            sampling_prob = strategy[action_idx] + 1e-6
-                            regret = (v_s - v_s_prime) / sampling_prob
-                            agent.update_regrets(info_set, action_idx, regret)
-                    
-                    successful_iterations += 1
-                    success = True
-                else:
-                    if verbose:
-                        print("Hand did not complete properly, retrying...")
-                    retries += 1
-                
-                if successful_iterations % 1000 == 0:
-                    agent.compute_strategy()
-                
-            except Exception as e:
-                retries += 1
-                #print(f"Error in iteration: {str(e)}")
-                dealer = reset_dealer()
-        
-        if not success:
-            print(f"Failed to complete iteration after {max_retries} retries, continuing...")
-    
-    agent.compute_strategy()
-    return agent
-
-def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0, verbose=False):
+def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
     blinds = [1, 2] + [0] * (num_players - 2)
 
     def reset_dealer():
@@ -244,7 +118,89 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
         )
 
     dealer = reset_dealer()
-    evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
+
+    successful_iterations = 0
+
+    while successful_iterations < iterations: 
+        try:
+            obs = dealer.reset(reset_stacks=True)
+            histories = [[] for _ in range(num_players)]
+            done = [False] * num_players
+            
+            while not all(done) and obs['action'] != -1:              
+                current_player_idx = obs['action']
+                hole = obs['hole_cards']
+                board = obs['community_cards']
+                pot = obs['pot']
+                stacks = tuple(obs['stacks'])
+                min_raise = obs['min_raise']
+                street_commits = tuple(obs['street_commits'])
+
+                street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
+
+                info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
+                
+                # For training, treat index 0 as the trained player
+                is_trained_player = (current_player_idx == 0)
+                action = agent.select_action(info_set, is_trained_player)
+                action_idx = agent.actions.index(action)
+
+                if action == 'fold':
+                    bet = -1
+                elif action == 'call':
+                    bet = min(obs['call'], stacks[current_player_idx])
+                else:
+                    strength = agent.evaluator.evaluate(hole, board)
+                    bet = agent.determine_bet_size(strength, pot, min_raise, stacks[current_player_idx], street)
+                    
+                histories[current_player_idx].append((info_set, action_idx))
+                obs, rewards, done = dealer.step(bet)
+            
+            # Check if the hand actually completed
+            if len(rewards) == num_players:
+                for player_idx in range(num_players):
+                    for info_set, action_idx in histories[player_idx]:
+                        # Customized regret calculations
+                        v_s = rewards[player_idx]
+                        strategy = agent.strategy.get(info_set, np.ones(3)/3)
+                        v_s_prime = np.dot(strategy, agent.regrets[info_set])
+                        sampling_prob = strategy[action_idx] + 1e-6
+                        regret = (v_s - v_s_prime) / sampling_prob
+                        agent.update_regrets(info_set, action_idx, regret)
+                
+                successful_iterations += 1
+            
+            if successful_iterations % 1000 == 0:
+                # Update every 1000 iterations
+                agent.compute_average_strategy()
+            
+        except Exception:
+            dealer = reset_dealer()
+    
+    # Compute final average at the end
+    agent.compute_average_strategy()
+
+def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0):
+    blinds = [1, 2] + [0] * (num_players - 2)
+
+    def reset_dealer():
+        return clubs.poker.Dealer(
+            num_players=num_players,
+            num_streets=4,
+            blinds=blinds,
+            antes=0,
+            raise_sizes='pot',
+            num_raises=float('inf'),
+            num_suits=4,
+            num_ranks=13,
+            num_hole_cards=2,
+            mandatory_num_hole_cards=0,
+            start_stack=200,
+            num_community_cards=[0, 3, 1, 1],
+            num_cards_for_hand=5
+        )
+
+    dealer = reset_dealer()
     total_rewards = 0
     completed_episodes = 0
 
@@ -252,12 +208,8 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
         try:
             obs = dealer.reset(reset_stacks=True)
             done = [False] * num_players
-            step_count = 0
 
             while not all(done) and obs['action'] != -1:
-                step_count += 1
-                if step_count > 100:  # Safeguard against infinite loops
-                    break
                     
                 current_player_idx = obs['action']
                 
@@ -272,15 +224,11 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
                 min_raise = obs['min_raise']
                 street_commits = tuple(obs['street_commits'])
 
-                street = 'preflop' if len(board) == 0 else \
-                         'flop' if len(board) == 3 else \
-                         'turn' if len(board) == 4 else 'river'
+                street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
 
                 if current_player_idx == trained_player_idx:
                     info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
-                    # Set position for bet sizing
-                    agent.position = current_player_idx
-                    action = agent.select_action(info_set, 1.0)
+                    action = agent.select_action(info_set)
                 else:
                     action = random.choice(agent.actions)
 
@@ -289,14 +237,12 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
                 elif action == 'call':
                     bet = min(obs['call'], stacks[current_player_idx])
                 else:
-                    strength = evaluator.evaluate(hole, board)
-                    # Set the player's position for bet sizing
-                    agent.position = current_player_idx
+                    strength = agent.evaluator.evaluate(hole, board)
                     bet = agent.determine_bet_size(strength, pot, min_raise, stacks[current_player_idx], street)
 
                 obs, rewards, done = dealer.step(bet)
 
-            if step_count <= 100 and len(rewards) == num_players:
+            if len(rewards) == num_players:
                 total_rewards += rewards[0]
                 completed_episodes += 1
                 
@@ -309,15 +255,14 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
 
 
 # NUM_PLAYERS = 4
-# # Create agent with a position specified
-# agent = MCCFR_N_Player_Optimized_Bet(position=0)
+# agent = MCCFR_N_Player_Optimized_Bet()
 
 # print("Training MCCFR agent...")
 # # Start with fewer iterations for testing
-# train_mccfr_n_player_basic_bet(agent, num_players=NUM_PLAYERS, iterations=10000, verbose=True)
+# train_mccfr_n_player_basic_bet(agent, num_players=NUM_PLAYERS, iterations=1000)
 
 # print("Evaluating against random agents...")
 # for _ in range(10):
-#     avg_rewards = evaluate_vs_random(agent, num_players=NUM_PLAYERS, episodes=10000, trained_player_idx=0, verbose=True)
+#     avg_rewards = evaluate_vs_random(agent, num_players=NUM_PLAYERS, episodes=10000, trained_player_idx=0)
 
 #     print(f"Average rewards vs random agents: {avg_rewards}")
