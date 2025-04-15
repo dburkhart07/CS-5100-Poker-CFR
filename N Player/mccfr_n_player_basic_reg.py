@@ -150,14 +150,22 @@ def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000):
             # Check if the hand actually completed
             if len(rewards) == num_players:
                 for player_idx in range(num_players):
-                    for info_set, action_idx in histories[player_idx]:
-                        # Customized regret calculations
-                        v_s = rewards[player_idx]
-                        strategy = agent.strategy.get(info_set, np.ones(3)/3)
-                        v_s_prime = np.dot(strategy, agent.regrets[info_set])
-                        sampling_prob = strategy[action_idx] + 1e-6
-                        regret = (v_s - v_s_prime) / sampling_prob
-                        agent.update_regrets(info_set, action_idx, regret)
+                    for info_set, taken_action_idx in histories[player_idx]:
+                        # Current strategy
+                        strategy = agent.get_strategy(info_set)
+
+                        # Estimate counterfactual values: here we use a proxy — final reward
+                        # Since we're doing outcome sampling, use the reward as a sampled estimate of v(I, a)
+                        util = np.full(len(agent.actions), rewards[player_idx])
+
+                        # Compute expected value across strategy
+                        expected_util = np.dot(strategy, util)
+
+                        # Update regrets for **all** actions
+                        for a in range(len(agent.actions)):
+                            regret = util[a] - expected_util
+                            agent.update_regrets(info_set, a, regret)
+
                 
                 successful_iterations += 1
             

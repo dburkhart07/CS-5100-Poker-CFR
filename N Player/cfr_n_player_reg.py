@@ -36,16 +36,12 @@ class CFRNPlayerAgent:
         strategy = self.get_strategy(info_set)
         return np.random.choice(self.actions, p=strategy)
 
-    def update_regrets(self, info_set, action_taken, actual_utility, all_utilities):
-        # Initialize if not persent
+    def update_regrets(self, info_set, action_idx, regret):
         if info_set not in self.regrets:
             self.regrets[info_set] = np.zeros(len(self.actions))
 
-        # Apply regret matching based on utility differences
         self.regrets[info_set] *= self.decay_rate
-        for i in range(len(self.actions)):
-            regret = all_utilities[i] - actual_utility
-            self.regrets[info_set][i] += regret
+        self.regrets[info_set][action_idx] += regret
 
     # Create an abstract information set
     def abstract_info_set(self, obs, player_idx):
@@ -117,11 +113,21 @@ def train_cfr(agent, num_players=4, iterations=100000):
 
             # Update regret after finishing a hand
             for player_idx in range(num_players):
-                final_reward = rewards[player_idx]
-                for info_set, action_idx in histories[player_idx]:
-                    # Actual reward for the player's action, negative everywhere else
-                    utilities = [-final_reward if i != action_idx else final_reward for i in range(3)]
-                    agent.update_regrets(info_set, action_idx, final_reward, utilities)
+                for info_set, taken_action_idx in histories[player_idx]:
+                        # Current strategy
+                        strategy = agent.get_strategy(info_set)
+
+                        # Estimate counterfactual values: here we use a proxy — final reward
+                        # Since we're doing outcome sampling, use the reward as a sampled estimate of v(I, a)
+                        util = np.full(len(agent.actions), rewards[player_idx])
+
+                        # Compute expected value across strategy
+                        expected_util = np.dot(strategy, util)
+
+                        # Update regrets for **all** actions
+                        for a in range(len(agent.actions)):
+                            regret = util[a] - expected_util
+                            agent.update_regrets(info_set, a, regret)
 
         # Skip over episode as soon as anything goes wrong
         except Exception:

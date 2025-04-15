@@ -29,6 +29,9 @@ class MCCFR_N_Player_Complex:
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
 
+        self.strategy_sum[info_set] += strategy
+        self.strategy[info_set] = strategy
+
         return strategy
 
     def sample_action(self, info_set):
@@ -191,10 +194,23 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
             if len(rewards) != num_players:
                 raise ValueError(f"Unexpected rewards length: {len(rewards)}")
             
+            
             for player_idx in range(num_players):
-                for info_set, action_idx in histories[player_idx]:
-                    regret = rewards[player_idx]
-                    agent.update_regrets(info_set, action_idx, regret)
+                for info_set, taken_action_idx in histories[player_idx]:
+                        # Current strategy
+                        strategy = agent.get_strategy(info_set)
+
+                        # Estimate counterfactual values: here we use a proxy — final reward
+                        # Since we're doing outcome sampling, use the reward as a sampled estimate of v(I, a)
+                        util = np.full(len(agent.actions), rewards[player_idx])
+
+                        # Compute expected value across strategy
+                        expected_util = np.dot(strategy, util)
+
+                        # Update regrets for **all** actions
+                        for a in range(len(agent.actions)):
+                            regret = util[a] - expected_util
+                            agent.update_regrets(info_set, a, regret)
             
             successful_iterations += 1
                 
