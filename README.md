@@ -22,8 +22,8 @@ pip install numpy matplotlib clubs time
 If this does not work, try making sure you have pip installed, updated to a compatible version, or using pip3 instead
 
 ### Testing code individually
-Most of the paper talks about the code that is used in the N-Player folder (as the 2 Player code all works in the N Player, and is rather to show the work I did initially).<br>
-Each file can be run individually to see how agents are trained/evaluated (but this does not provide much insight).<br>
+Most of the paper talks about the code that is used in the N-Player folder (as the 2 Player code all works in the N Player, and is rather to show the work I did initially).<br><br>
+Each file can be run individually to see how agents are trained/evaluated (but this does not provide much insight).<br><br>
 The biggest insight comes from running the testing files, where several agents are compared against each other. This can have the number of players (the variable n) adjusted, so long as self.agents has n agents, and any that need to be trained are trained.
-They can be arranged in any order, and some can be commented out to reduce the number of players (can recreate similar results by bring n down to 2 and only using 2 agents, but be aware that the code for each agent is slightly different than the 2 Player one).<br>
+They can be arranged in any order, and some can be commented out to reduce the number of players (can recreate similar results by bring n down to 2 and only using 2 agents, but be aware that the code for each agent is slightly different than the 2 Player one).<br><br>
 For information on specific policies for each of the agents, see comments or read the paper that goes into more detail on them (specifically those used in the N-Player testing).
