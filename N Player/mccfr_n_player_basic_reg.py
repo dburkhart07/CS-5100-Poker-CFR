@@ -161,10 +161,9 @@ def train_mccfr_n_player_basic_reg(agent, num_players=4, iterations=100000):
                         # Compute expected value across strategy
                         expected_util = np.dot(strategy, util)
 
-                        # Update regrets for **all** actions
-                        for a in range(len(agent.actions)):
-                            regret = util[a] - expected_util
-                            agent.update_regrets(info_set, a, regret)
+                        # Update regrets for the taken action
+                        regret = util[taken_action_idx] - expected_util
+                        agent.update_regrets(info_set, taken_action_idx, regret)
 
                 
                 successful_iterations += 1

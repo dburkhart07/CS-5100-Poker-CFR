@@ -194,7 +194,7 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
             if len(rewards) != num_players:
                 raise ValueError(f"Unexpected rewards length: {len(rewards)}")
             
-            
+
             for player_idx in range(num_players):
                 for info_set, taken_action_idx in histories[player_idx]:
                         # Current strategy
@@ -207,10 +207,9 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
                         # Compute expected value across strategy
                         expected_util = np.dot(strategy, util)
 
-                        # Update regrets for **all** actions
-                        for a in range(len(agent.actions)):
-                            regret = util[a] - expected_util
-                            agent.update_regrets(info_set, a, regret)
+                        # Update regrets for the taken action
+                        regret = util[taken_action_idx] - expected_util
+                        agent.update_regrets(info_set, taken_action_idx, regret)
             
             successful_iterations += 1
                 
