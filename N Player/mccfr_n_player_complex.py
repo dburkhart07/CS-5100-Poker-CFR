@@ -98,14 +98,14 @@ class MCCFR_N_Player_Complex:
 
     def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
         position = player_idx
-        stack_bucket = int(obs['stacks'][player_idx] / 50)
-        pot_bucket = int(pot_size / 50)
+        stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)
+        pot_bucket = min(int(pot_size / 25), 8)
 
         if street == 'preflop':
             hand_strength_bucket = 0
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole, list(board))
-            hand_strength_bucket = int(raw_hand_strength / 250)
+            norm_strength = 7500 - self.evaluator.evaluate(hole, list(board))
+            hand_strength_bucket = int(norm_strength / 1000) 
 
         return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
     

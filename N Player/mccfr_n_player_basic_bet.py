@@ -85,17 +85,17 @@ class MCCFR_N_Player_Optimized_Bet:
         return bet
         
     def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
-        stack_bucket = int(obs['stacks'][player_idx] / 50)  # Abstract stack into buckets
-        pot_bucket = int(pot_size / 50) # Abstract pot size into buckets
+        position = player_idx
+        stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)
+        pot_bucket = min(int(pot_size / 25), 8)
 
-        # Abstract hand strength into buckets (~ 32 levels per bucket)
         if street == 'preflop':
             hand_strength_bucket = 0
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole, list(board))
-            hand_strength_bucket = int(raw_hand_strength / 250)
+            norm_strength = 7500 - self.evaluator.evaluate(hole, list(board))
+            hand_strength_bucket = int(norm_strength / 1000) 
 
-        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits)
+        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
 
 def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
     blinds = [1, 2] + [0] * (num_players - 2)

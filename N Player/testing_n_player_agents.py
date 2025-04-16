@@ -27,7 +27,7 @@ class RandomAgent:
         return np.random.choice(self.actions)
     
     # Basic betting function based on state of the game
-    def determine_bet_size(self, pot_size, min_raise, stack_size, street=None):
+    def determine_bet_size(self, pot_size, min_raise, stack_size):
         return min(stack_size, max(min_raise, pot_size // 2))
 
 
@@ -43,7 +43,7 @@ class AggressiveAgent:
 
 
 class NPlayerGameSimulator:
-    def __init__(self, num_players=4, train_iters=10000):
+    def __init__(self, num_players=4, train_iters=1000):
         self.num_players = num_players
 
         # First player is small blind, second is big blind
@@ -54,17 +54,17 @@ class NPlayerGameSimulator:
         self.reward_history = defaultdict(list)
 
         self.agents = {
-            'CFR': CFRNPlayerAgent(),
+            #'CFR': CFRNPlayerAgent(),
             #'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
-            #'Aggressive_Agent': AggressiveAgent(),
+            'Aggressive_Agent': AggressiveAgent(),
             #'MCCFR_Basic_Reg': MCCFR_N_Player_Optimized_Reg(),
-            #'MCCFR_Complex': MCCFR_N_Player_Complex(),
-            'Random_Agent': RandomAgent(),
+            'MCCFR_Complex': MCCFR_N_Player_Complex(),
+            #'#Random_Agent': RandomAgent(),
         }
 
         # Train all agents that have training functions
-        print("Training CFR agent...")
-        train_cfr(self.agents['CFR'], num_players=num_players, iterations=train_iters)
+        # print("Training CFR agent...")
+        # train_cfr(self.agents['CFR'], num_players=num_players, iterations=train_iters)
 
         # print("Training MCCFR Basic Bet agent...")
         # train_mccfr_n_player_basic_bet(self.agents['MCCFR_Basic_Bet'], iterations=train_iters)
@@ -72,8 +72,8 @@ class NPlayerGameSimulator:
         # print("Training MCCFR Basic Reg agent...")
         # train_mccfr_n_player_basic_reg(self.agents['MCCFR_Basic_Reg'], iterations=train_iters)
 
-        # print("Training MCCFR Complex agent...")
-        # train_mccfr_n_player_complex(self.agents['MCCFR_Complex'], iterations=train_iters)
+        print("Training MCCFR Complex agent...")
+        train_mccfr_n_player_complex(self.agents['MCCFR_Complex'], iterations=train_iters)
 
         # Initialize the dealer and evaluator for hand strength
         self.init_dealer()

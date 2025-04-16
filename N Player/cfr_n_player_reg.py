@@ -45,22 +45,20 @@ class CFRNPlayerAgent:
 
     # Create an abstract information set
     def abstract_info_set(self, obs, player_idx):
-        hole_cards = obs['hole_cards']
+        hole = obs['hole_cards']
         board = obs['community_cards']
         street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
         position = player_idx
-        # Abstract the stack into buckets
-        stack_bucket = int(obs['stacks'][player_idx] / 10) 
-        # Abstract the pot size into buckets
-        pot_bucket = int(obs['pot'] / 50)
+        stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)  # buckets: 0–8
+        pot_bucket = min(int(obs['pot'] / 25), 8)
 
         # Abstract the hand strength into buckets
         if street == 'preflop':
             hand_strength_bucket = 0
 
         else:
-            raw_hand_strength = self.evaluator.evaluate(hole_cards, list(board))
-            hand_strength_bucket = int(raw_hand_strength / 250)
+            norm_strength = 7500 - self.evaluator.evaluate(hole, list(board))
+            hand_strength_bucket = int(norm_strength / 1000)  
 
         return (hand_strength_bucket, street, position, stack_bucket, pot_bucket)
 
@@ -201,13 +199,13 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
     return total_reward / episodes
 
 
-NUM_PLAYERS = 2
-agent = CFRNPlayerAgent()
+# NUM_PLAYERS = 2
+# agent = CFRNPlayerAgent()
 
-print("Training CFR agent")
-train_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
+# print("Training CFR agent")
+# train_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
 
-print("Evaluating CFR agent")
-for _ in range(10):
-    avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=3000)
-    print(f"Average rewards: {avg_rewards}")
+# print("Evaluating CFR agent")
+# for _ in range(10):
+#     avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=3000)
+#     print(f"Average rewards: {avg_rewards}")

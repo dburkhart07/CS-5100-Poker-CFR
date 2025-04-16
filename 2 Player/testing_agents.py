@@ -208,26 +208,26 @@ aggressive_opponent = AggressiveAgent()
 
 # CFR agents against the basic agents
 game(cfr_agent_reg, random_opponent, "CFR Reg", "Random", 10000)
-# game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", 1000)
-# game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", 1000)
-# game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", 1000)
+game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", 1000)
+game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", 1000)
+game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", 1000)
 
 # MCCFR Agents versus Random
 game(mccfr_bet_agent, random_opponent, "MCCFR Bet", "Random", 10000)
 game(mccfr_reg_agent, random_opponent, "MCCFR Reg", "Random", 10000)
 
 # Basic MCCFR Agents versus CFR agents
-# game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", 1000)
-# game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", 1000)
+game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", 1000)
+game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", 1000)
 
 
 # MCCFR Agents against themselves
-# game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", 1000)
+game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", 1000)
 
 # Complex MCCFR Agent versus Random
 game(mccfr_complex_agent, random_opponent, "MCCFR Complex", "Random", 10000)
 
 # Complex MCCFR Agent versus the basic MCCFR Agents
-# game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", 1000)
-# game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", 1000)
+game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", 1000)
+game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", 1000)
 
