@@ -53,6 +53,7 @@ class NPlayerGameSimulator:
         # Keep track of average reward periodically for visualization purposes
         self.reward_history = defaultdict(list)
 
+        # NOTE: ADJUST NUMBER OF PLAYERS ACCORDINGLY, ALSO TRAIN AGENTS THAT NEED TRAINING
         self.agents = {
             'CFR': CFRNPlayerAgent(),
             'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
@@ -262,7 +263,9 @@ class NPlayerGameSimulator:
         plt.grid(True)
         plt.show()
 
+
 # Run simulation and plot
+# NOTE: CHANGE THIS TO INCREASE OR DECREASE THE NUMBER OF PLAYERS
 n = 4
 simulator = NPlayerGameSimulator(num_players=n)
 print(f"\nStarting {n}-player simulation...")
