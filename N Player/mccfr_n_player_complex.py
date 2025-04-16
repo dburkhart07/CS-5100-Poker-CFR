@@ -21,7 +21,7 @@ class MCCFR_N_Player_Complex:
             self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
             self.strategy_sum[info_set] = np.zeros(len(self.actions))
 
-        # Get and normalize all positive regrets
+        # Get and normalize all positive regrets (regret matching)
         regrets = self.regrets.get(info_set, np.zeros(len(self.actions)))
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)

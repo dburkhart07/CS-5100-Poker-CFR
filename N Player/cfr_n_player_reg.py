@@ -6,6 +6,7 @@ class CFRNPlayerAgent:
     def __init__(self):
         self.regrets = {}
         self.strategy = {}
+        self.strategy_sum = {}
         self.actions = ['fold', 'call', 'raise']
         self.decay_rate = 0.95
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)

@@ -222,7 +222,7 @@ class NPlayerGameSimulator:
 
         # Play each episode
         for episode in range(1, episodes + 1):
-            rewards = self.play_episode()
+            rewards = self.play_episode(render=True)
             # If the episode failed, move on
             if rewards is None:
                 continue
