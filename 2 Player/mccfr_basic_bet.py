@@ -193,8 +193,7 @@ def evaluate(agent, episodes=1000):
     return total_reward / episodes
 
 # Train and evaluate MCCFR agent
-# Averages around 5.5-6.5 chips/game
-agent = MCCFR_Agent()
-train_mccfr(agent, iterations=300000)
-avg_reward = evaluate(agent, episodes=100000)
-print(f"Average reward after training MCCFR Betting Agent: {avg_reward}")
+# agent = MCCFR_Agent()
+# train_mccfr(agent, iterations=300000)
+# avg_reward = evaluate(agent, episodes=100000)
+# print(f"Average reward after training MCCFR Betting Agent: {avg_reward}")

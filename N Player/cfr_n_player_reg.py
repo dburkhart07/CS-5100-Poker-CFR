@@ -57,11 +57,13 @@ class CFRNPlayerAgent:
         # Abstract the hand strength into buckets
         if street == 'preflop':
             hand_strength_bucket = 0
+
         else:
             raw_hand_strength = self.evaluator.evaluate(hole_cards, list(board))
             hand_strength_bucket = int(raw_hand_strength / 250)
 
         return (hand_strength_bucket, street, position, stack_bucket, pot_bucket)
+
 
 
 def train_cfr(agent, num_players=4, iterations=100000):
@@ -199,13 +201,13 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
     return total_reward / episodes
 
 
-# NUM_PLAYERS = 2
-# agent = CFRNPlayerAgent()
+NUM_PLAYERS = 2
+agent = CFRNPlayerAgent()
 
-# print("Training CFR agent")
-# train_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
+print("Training CFR agent")
+train_cfr(agent, num_players=NUM_PLAYERS, iterations=1000)
 
-# print("Evaluating CFR agent")
-# for _ in range(10):
-#     avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=3000)
-#     print(f"Average rewards: {avg_rewards}")
+print("Evaluating CFR agent")
+for _ in range(10):
+    avg_rewards = evaluate_against_random(agent, num_players=NUM_PLAYERS, episodes=3000)
+    print(f"Average rewards: {avg_rewards}")

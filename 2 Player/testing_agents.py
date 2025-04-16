@@ -3,10 +3,8 @@ import numpy as np
 import clubs
 
 # From the CFR 2 Player directory
-from final_betting_agent import CFR_Agent as Bet_CFR_Agent
-from final_betting_agent import train_cfr as train_bet_cfr
-from final_regular_agent import CFR_Agent as Reg_CFR_Agent
-from final_regular_agent import train_cfr as train_reg_cfr
+from cfr_reg import CFR_Agent as Reg_CFR_Agent
+from cfr_reg import train_cfr as train_reg_cfr
 
 # From the MCCFR 2 Player directory
 from mccfr_basic_bet import MCCFR_Agent as MCCFR_Bet_Agent
@@ -77,7 +75,7 @@ def play_head_to_head(agent1, agent2, episodes=1000):
             agent = players[turn_tracker % 2]
 
             # How CFR agent plays
-            if isinstance(agent, Bet_CFR_Agent) or isinstance(agent, Reg_CFR_Agent):
+            if  isinstance(agent, Reg_CFR_Agent):
                 hole_cards = obs['hole_cards']
                 community_cards = obs['community_cards']
                 hand_strength = evaluator.evaluate(hole_cards, community_cards)
@@ -103,12 +101,9 @@ def play_head_to_head(agent1, agent2, episodes=1000):
                 elif action == 'call':
                     bet = obs['call']
                 else:
-                    if isinstance(agent, Bet_CFR_Agent):
-                        bet = agent.determine_bet_size(hand_strength, pot_size, min_raise, stacks[0], street)
-                    else:
-                        pot_size = obs['pot']
-                        stack_size = obs['stacks'][0]
-                        bet = min(stack_size, max(obs['min_raise'], pot_size // 2))
+                    pot_size = obs['pot']
+                    stack_size = obs['stacks'][0]
+                    bet = min(stack_size, max(obs['min_raise'], pot_size // 2))
             
             # How MCCFR Basic agent plays
             elif isinstance(agent, MCCFR_Bet_Agent) or isinstance(agent, MCCFR_Reg_Agent):
@@ -184,9 +179,6 @@ def play_head_to_head(agent1, agent2, episodes=1000):
     return total_reward_agent1 / episodes, total_reward_agent2 / episodes
 
 
-# Initialize the agents
-cfr_agent_bet = Bet_CFR_Agent()
-train_bet_cfr(cfr_agent_bet, iterations=30000)
 
 cfr_agent_reg = Reg_CFR_Agent()
 train_reg_cfr(cfr_agent_reg, iterations=30000)
@@ -215,34 +207,27 @@ aggressive_opponent = AggressiveAgent()
 
 
 # CFR agents against the basic agents
-game(cfr_agent_bet, random_opponent, "CFR Bet", "Random", 1000)
-game(cfr_agent_bet, conservative_opponent, "CFR Bet", "Conservative", 1000)
-game(cfr_agent_bet, matcher_opponent, "CFR Bet", "Calling", 1000)
-game(cfr_agent_bet, aggressive_opponent, "CFR Bet", "Aggressive", 1000)
+game(cfr_agent_reg, random_opponent, "CFR Reg", "Random", 10000)
+# game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", 1000)
+# game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", 1000)
+# game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", 1000)
 
-game(cfr_agent_reg, random_opponent, "CFR Reg", "Random", 1000)
-game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", 1000)
-game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", 1000)
-game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", 1000)
-
-
-# CFR agents against themsevles
-game(cfr_agent_bet, cfr_agent_reg, "CFR Bet", "CFR Reg", 1000)
-
+# MCCFR Agents versus Random
+game(mccfr_bet_agent, random_opponent, "MCCFR Bet", "Random", 10000)
+game(mccfr_reg_agent, random_opponent, "MCCFR Reg", "Random", 10000)
 
 # Basic MCCFR Agents versus CFR agents
-game(mccfr_bet_agent, cfr_agent_bet, "MCCFR Bet", "CFR Bet", 1000)
-game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", 1000)
-
-game(mccfr_reg_agent, cfr_agent_bet, "MCCFR Reg", "CFR Bet", 1000)
-game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", 1000)
+# game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", 1000)
+# game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", 1000)
 
 
 # MCCFR Agents against themselves
-game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", 1000)
+# game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", 1000)
 
+# Complex MCCFR Agent versus Random
+game(mccfr_complex_agent, random_opponent, "MCCFR Complex", "Random", 10000)
 
 # Complex MCCFR Agent versus the basic MCCFR Agents
-game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", 1000)
-game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", 1000)
+# game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", 1000)
+# game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", 1000)
 

@@ -165,8 +165,6 @@ def evaluate(agent, episodes=1000):
 
 
 agent = CFR_Agent()
-train_cfr(agent, iterations=30000)
+train_cfr(agent, iterations=3000)
 avg_reward = evaluate(agent, episodes=10000)
-# Yields average reward of around 3 chips (usually a bit higher) - substantially increases based on iterations
-# 200 chips in total, wins on average 3 per round
 print(f"Average reward after training CFR Regular agent: {avg_reward}")
