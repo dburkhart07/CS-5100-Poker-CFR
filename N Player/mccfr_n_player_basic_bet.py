@@ -30,11 +30,7 @@ class MCCFR_N_Player_Optimized_Bet:
         self.strategy[info_set] = strategy
         return strategy
 
-    def select_action(self, info_set, is_trained_player=True):
-        # Generalized random possibilities (cater towards calling)
-        if not is_trained_player:
-            return np.random.choice(self.actions, p=[0.2, 0.5, 0.3])
-            
+    def select_action(self, info_set):
         strategy = self.get_strategy(info_set)
 
         # Special bluffing
@@ -83,9 +79,10 @@ class MCCFR_N_Player_Optimized_Bet:
         # Ensure the bet is valid and within stack constraints
         bet = min(stack_size, max(min_raise, int(base_bet)))
         return bet
-        
+    
+    # Create an abstract information set
     def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
-        position = player_idx
+        # 8 buckets for stacks, pot size, and hand strength
         stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)
         pot_bucket = min(int(pot_size / 25), 8)
 
@@ -95,11 +92,11 @@ class MCCFR_N_Player_Optimized_Bet:
             norm_strength = 7500 - self.evaluator.evaluate(hole, list(board))
             hand_strength_bucket = int(norm_strength / 1000) 
 
-        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
+        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits)
 
 def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
+    # Initialize blinds and dealer
     blinds = [1, 2] + [0] * (num_players - 2)
-
     def reset_dealer():
         return clubs.poker.Dealer(
             num_players=num_players,
@@ -118,17 +115,20 @@ def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
         )
 
     dealer = reset_dealer()
-
     successful_iterations = 0
 
+    # Only count successful iterations
     while successful_iterations < iterations: 
         try:
+            # Reset everything
             obs = dealer.reset(reset_stacks=True)
             histories = [[] for _ in range(num_players)]
             done = [False] * num_players
             
-            while not all(done) and obs['action'] != -1:              
+            # Play until all players are done or invalid action is entered (unlikely)
+            while not all(done) and obs['action'] != -1:             
                 current_player_idx = obs['action']
+                # Extract relevant features to create abstract state 
                 hole = obs['hole_cards']
                 board = obs['community_cards']
                 pot = obs['pot']
@@ -140,9 +140,7 @@ def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
 
                 info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
                 
-                # For training, treat index 0 as the trained player
-                is_trained_player = (current_player_idx == 0)
-                action = agent.select_action(info_set, is_trained_player)
+                action = agent.select_action(info_set)
                 action_idx = agent.actions.index(action)
 
                 if action == 'fold':
@@ -156,25 +154,24 @@ def train_mccfr_n_player_basic_bet(agent, num_players=4, iterations=10000):
                 histories[current_player_idx].append((info_set, action_idx))
                 obs, rewards, done = dealer.step(bet)
             
-            # Check if the hand actually completed
-            if len(rewards) == num_players:
-                for player_idx in range(num_players):
-                    for info_set, taken_action_idx in histories[player_idx]:
-                        # Current strategy
-                        strategy = agent.get_strategy(info_set)
 
-                        # Estimate counterfactual values: here we use a proxy — final reward
-                        # Since we're doing outcome sampling, use the reward as a sampled estimate of v(I, a)
-                        util = np.full(len(agent.actions), rewards[player_idx])
+            for player_idx in range(num_players):
+                for info_set, taken_action_idx in histories[player_idx]:
+                    # Current strategy
+                    strategy = agent.get_strategy(info_set)
 
-                        # Compute expected value across strategy
-                        expected_util = np.dot(strategy, util)
+                    # Estimate counterfactual values: here we use a proxy — final reward
+                    # Since we're doing outcome sampling, use the reward as a sampled estimate of v(I, a)
+                    util = np.full(len(agent.actions), rewards[player_idx])
 
-                        # Update regrets for the taken action
-                        regret = util[taken_action_idx] - expected_util
-                        agent.update_regrets(info_set, taken_action_idx, regret)
-                
-                successful_iterations += 1
+                    # Compute expected value across strategy
+                    expected_util = np.dot(strategy, util)
+
+                    # Update regrets for the taken action
+                    regret = util[taken_action_idx] - expected_util
+                    agent.update_regrets(info_set, taken_action_idx, regret)
+            
+            successful_iterations += 1
             
             if successful_iterations % 1000 == 0:
                 # Update every 1000 iterations
@@ -208,9 +205,9 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
 
     dealer = reset_dealer()
     total_rewards = 0
-    completed_episodes = 0
 
-    while completed_episodes < episodes:
+    # Testing code is very similar to traniing code
+    for _ in range(episodes):
         try:
             obs = dealer.reset(reset_stacks=True)
             done = [False] * num_players
@@ -232,9 +229,11 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
 
                 street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
 
+                # For the trained agent, perform similar training steps to get the action
                 if current_player_idx == trained_player_idx:
                     info_set = agent.abstract_info_set(obs, hole, board, pot, street, street_commits, current_player_idx)
                     action = agent.select_action(info_set)
+                # Otherwise, just take a random action
                 else:
                     action = random.choice(agent.actions)
 
@@ -248,18 +247,19 @@ def evaluate_vs_random(agent, num_players=4, episodes=1000, trained_player_idx=0
 
                 obs, rewards, done = dealer.step(bet)
 
-            if len(rewards) == num_players:
-                total_rewards += rewards[0]
-                completed_episodes += 1
+            total_rewards += rewards[0]
                 
 
         except Exception as e:
             dealer = reset_dealer()
             continue
 
-    return total_rewards / completed_episodes
+    return total_rewards / episodes
 
 
+# ===========================================================================================
+# Training for the agent in just this file - UNCOMMENT TO EXPERIMENT WITH THIS AGENT'S POLICY
+# ===========================================================================================
 # NUM_PLAYERS = 4
 # agent = MCCFR_N_Player_Optimized_Bet()
 

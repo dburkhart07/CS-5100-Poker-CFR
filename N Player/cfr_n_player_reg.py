@@ -7,28 +7,28 @@ class CFRNPlayerAgent:
         self.regrets = {}
         self.strategy = {}
         self.actions = ['fold', 'call', 'raise']
-        # Decay rate for getting further into training
         self.decay_rate = 0.95
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
 
+    # Get the strategy for the agent based on the given information set
     def get_strategy(self, info_set):
-        # Initialize if not present
+        # Create even probability strategy if not otherwise there
         if info_set not in self.strategy:
             self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
-
+        
+        # Get the regrets at the given information set (only keep positive ones)
         regrets = self.regrets.get(info_set, np.zeros(len(self.actions)))
-        # Keep only positive regrets
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)
-
-        # Regret-matching (update and normalize strategy based on regrets)
+        
+        # Create the new strategy based on the normalized positive regrets
         if normalizing_sum > 0:
             strategy = positive_regrets / normalizing_sum
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
-
-        # Update strategy
+        
         self.strategy[info_set] = strategy
+        
         return strategy
 
     def select_action(self, info_set):
@@ -37,22 +37,26 @@ class CFRNPlayerAgent:
         return np.random.choice(self.actions, p=strategy)
 
     def update_regrets(self, info_set, action_idx, regret):
+        # Create new regret for each action if not already created
         if info_set not in self.regrets:
             self.regrets[info_set] = np.zeros(len(self.actions))
-
+        # Decay the regret as game goes further on (not as valuable later)
         self.regrets[info_set] *= self.decay_rate
-        self.regrets[info_set][action_idx] += regret
+        # Zero out regrets if it goes negative (avoid negative regrets)
+        self.regrets[info_set][action_idx] = max(0, self.regrets[info_set][action_idx] + regret)
 
     # Create an abstract information set
     def abstract_info_set(self, obs, player_idx):
+        # Extract proper features
         hole = obs['hole_cards']
         board = obs['community_cards']
         street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
         position = player_idx
-        stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)  # buckets: 0–8
+        # 8 buckets
+        stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8) 
         pot_bucket = min(int(obs['pot'] / 25), 8)
 
-        # Abstract the hand strength into buckets
+        # 8 buckets
         if street == 'preflop':
             hand_strength_bucket = 0
 
@@ -65,6 +69,7 @@ class CFRNPlayerAgent:
 
 
 def train_cfr(agent, num_players=4, iterations=100000):
+    # Initialize blinds and dealer
     blinds = [1, 2] + [0] * (num_players - 2)
     dealer = clubs.poker.Dealer(
         num_players=num_players,
@@ -84,21 +89,23 @@ def train_cfr(agent, num_players=4, iterations=100000):
 
     for _ in range(iterations):
         try:
+            # Reset everything
             obs = dealer.reset(reset_stacks=True)
             histories = [[] for _ in range(num_players)]
             done = [False] * num_players
 
+            # Play until all players are done or invalid action is entered (unlikely)
             while not all(done) and obs['action'] != -1:
+                # Achieve the current player
                 current_player = obs['action']
 
-                if not obs['active'][current_player]:
-                    obs, _, done = dealer.step(0)
-                    continue
-
+                # Retrieve information
                 info_set = agent.abstract_info_set(obs, current_player)
+                # Get action
                 action = agent.select_action(info_set)
                 action_idx = agent.actions.index(action)
                 
+                # Perform propoer bet
                 if action == 'fold':
                     bet = -1
                 elif action == 'call':
@@ -109,6 +116,7 @@ def train_cfr(agent, num_players=4, iterations=100000):
 
                 # Keep track of the history for each player
                 histories[current_player].append((info_set, action_idx))
+                # Advance the game forward
                 obs, rewards, done = dealer.step(bet)
 
             # Update regret after finishing a hand
@@ -199,6 +207,9 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
     return total_reward / episodes
 
 
+# ===========================================================================================
+# Training for the agent in just this file - UNCOMMENT TO EXPERIMENT WITH THIS AGENT'S POLICY
+# ===========================================================================================
 # NUM_PLAYERS = 2
 # agent = CFRNPlayerAgent()
 

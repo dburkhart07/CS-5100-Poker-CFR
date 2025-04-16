@@ -54,7 +54,7 @@ class MCCFR_N_Player_Complex:
         if np.random.random() < aggression_bluff_prob:
             return 'raise'
 
-        # Action sampling
+        # Average strategy sampling
         total = np.sum(strategy)
         probabilities = [
             max(self.epsilon, self.beta + self.tau * strategy[a] / (self.beta + total)) 
@@ -96,8 +96,9 @@ class MCCFR_N_Player_Complex:
         else:
             return min(stack_size, max(min_raise, pot_size // 2))
 
+    # Create an abstract information set
     def abstract_info_set(self, obs, hole, board, pot_size, street, street_commits, player_idx):
-        position = player_idx
+        # 8 buckets for stacks, pot size, and hand strength
         stack_bucket = min(int(obs['stacks'][player_idx] / 25), 8)
         pot_bucket = min(int(pot_size / 25), 8)
 
@@ -107,7 +108,7 @@ class MCCFR_N_Player_Complex:
             norm_strength = 7500 - self.evaluator.evaluate(hole, list(board))
             hand_strength_bucket = int(norm_strength / 1000) 
 
-        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits, position)
+        return (hand_strength_bucket, pot_bucket, stack_bucket, street, street_commits)
     
     # Update the opponent profiles based on the action they took
     def update_opponent_profile(self, player_idx, action_idx):
@@ -118,40 +119,41 @@ class MCCFR_N_Player_Complex:
 
 
 def train_n_player_cfr(agent, num_players=4, iterations=100000):
-    # Correct blinds configuration for 4 players: two blinds posted
-    blinds = [1, 2] + [0] * (num_players - 2)
-    
-    dealer = clubs.poker.Dealer(
-        num_players=num_players, 
-        num_streets=4,
-        blinds=blinds,
-        antes=0, 
-        raise_sizes='pot',
-        num_raises=float('inf'),
-        num_suits=4,
-        num_ranks=13,
-        num_hole_cards=2,
-        mandatory_num_hole_cards=0,
-        start_stack=200,
-        num_community_cards=[0, 3, 1, 1],
-        num_cards_for_hand=5
-    )
+    # Initialize dealer and blinds
+    blinds = [1, 2] + [0] * (num_players - 2)   
+    def reset_dealer():
+        return clubs.poker.Dealer(
+            num_players=num_players,
+            num_streets=4,
+            blinds=blinds,
+            antes=0,
+            raise_sizes='pot',
+            num_raises=float('inf'),
+            num_suits=4,
+            num_ranks=13,
+            num_hole_cards=2,
+            mandatory_num_hole_cards=0,
+            start_stack=200,
+            num_community_cards=[0, 3, 1, 1],
+            num_cards_for_hand=5
+        )
+
+    dealer = reset_dealer()
 
     successful_iterations = 0
     
+    # Only count successful iterations
     while successful_iterations < iterations:
         try:
+            # Reset everything
             obs = dealer.reset(reset_stacks=True)
             histories = [[] for _ in range(num_players)]
             done = [False] * num_players
             
+            # Play until all players are done or invalid action is entered (unlikely)
             while not all(done) and obs['action'] != -1:
                 current_player_idx = obs['action']
-                
-                if not obs['active'][current_player_idx]:
-                    obs, rewards, done = dealer.step(0)
-                    continue
-                    
+                # Extract relevant features to create abstract state 
                 hole_cards = obs['hole_cards']
                 board = obs['community_cards']
                 pot_size = obs['pot']
@@ -162,15 +164,16 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
 
                 info_set = agent.abstract_info_set(obs, hole_cards, board, pot_size, street, street_commits, current_player_idx)
                 
+                # Sample action and get its index
                 action = agent.sample_action(info_set)
                 action_idx = agent.actions.index(action)
 
-                
                 if action == 'fold':
                     bet = -1
                 elif action == 'call':
                     bet = min(obs['call'], stacks[current_player_idx])
                 else:
+                    # Either go all in, or use betting function
                     max_possible_raise = min(obs['max_raise'], stacks[current_player_idx])
                     if obs['min_raise'] > max_possible_raise:
                         bet = min(obs['call'], stacks[current_player_idx])
@@ -185,16 +188,13 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
                     if idx != current_player_idx:
                         agent.update_opponent_profile(idx, action_idx)
 
+                # Advance game
                 try:
                     obs, rewards, done = dealer.step(bet)
                 except Exception as e:
                     raise
             
-            # Ensure rewards array has correct length before updating
-            if len(rewards) != num_players:
-                raise ValueError(f"Unexpected rewards length: {len(rewards)}")
-            
-
+            # Outcome sampling to measure regrets
             for player_idx in range(num_players):
                 for info_set, taken_action_idx in histories[player_idx]:
                         # Current strategy
@@ -216,38 +216,10 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
             if successful_iterations % 1000 == 0:
                 # Reset the dealer and compute average strategy every 1000 iterations
                 agent.compute_average_strategy()
-                dealer = clubs.poker.Dealer(
-                    num_players=num_players, 
-                    num_streets=4,
-                    blinds=blinds,
-                    antes=0, 
-                    raise_sizes='pot',
-                    num_raises=float('inf'),
-                    num_suits=4,
-                    num_ranks=13,
-                    num_hole_cards=2,
-                    mandatory_num_hole_cards=0,
-                    start_stack=200,
-                    num_community_cards=[0, 3, 1, 1],
-                    num_cards_for_hand=5
-                )
+                dealer = reset_dealer()
                 
         except Exception as e:
-            dealer = clubs.poker.Dealer(
-                num_players=num_players, 
-                num_streets=4,
-                blinds=blinds,
-                antes=0, 
-                raise_sizes='pot',
-                num_raises=float('inf'),
-                num_suits=4,
-                num_ranks=13,
-                num_hole_cards=2,
-                mandatory_num_hole_cards=0,
-                start_stack=200,
-                num_community_cards=[0, 3, 1, 1],
-                num_cards_for_hand=5
-            )
+            dealer =  reset_dealer()
             continue
 
     # Compute the final average strategy at the end
@@ -257,36 +229,38 @@ def train_n_player_cfr(agent, num_players=4, iterations=100000):
 def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_idx=0):
     blinds = [1, 2] + [0] * (num_players - 2)
     
-    dealer = clubs.poker.Dealer(
-        num_players=num_players, 
-        num_streets=4,
-        blinds=blinds,
-        antes=0, 
-        raise_sizes='pot',
-        num_raises=float('inf'),
-        num_suits=4,
-        num_ranks=13,
-        num_hole_cards=2,
-        mandatory_num_hole_cards=0,
-        start_stack=200,
-        num_community_cards=[0, 3, 1, 1],
-        num_cards_for_hand=5
-    )
+    def reset_dealer():
+        return clubs.poker.Dealer(
+            num_players=num_players,
+            num_streets=4,
+            blinds=blinds,
+            antes=0,
+            raise_sizes='pot',
+            num_raises=float('inf'),
+            num_suits=4,
+            num_ranks=13,
+            num_hole_cards=2,
+            mandatory_num_hole_cards=0,
+            start_stack=200,
+            num_community_cards=[0, 3, 1, 1],
+            num_cards_for_hand=5
+        )
+
+    dealer = reset_dealer()
 
     total_rewards = 0
 
+    # Testing code is very similar to traniing code
     for _ in range(episodes):
         try:
             obs = dealer.reset(reset_stacks=True)
             done = [False] * num_players
-            step_count = 0
             
             while not all(done) and obs['action'] != -1:
-
                 current_player_idx = obs['action']
-                
+
                 if not obs['active'][current_player_idx]:
-                    obs, _, done = dealer.step(0)
+                    obs, _, done = dealer.step(-1)
                     continue
                 
                 hole_cards = obs['hole_cards']
@@ -297,9 +271,11 @@ def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_
                 
                 street = ['preflop', 'flop', 'turn', 'river'][len(board) - 0 if len(board) == 0 else len(board) - 2]
                 
+                # For the trained agent, perform similar training steps to get the action
                 if current_player_idx == trained_player_idx:
                     info_set = agent.abstract_info_set(obs, hole_cards, board, pot_size, street, street_commits, current_player_idx)
                     action = agent.sample_action(info_set)
+                # On opponent moves, choose a random action and update the profile
                 else:
                     action = np.random.choice(agent.actions)
                     action_idx = agent.actions.index(action)
@@ -322,26 +298,15 @@ def evaluate_against_random(agent, num_players=4, episodes=1000, trained_player_
             total_rewards += rewards[0]
         
         except Exception as e:
-            dealer = clubs.poker.Dealer(
-                num_players=num_players, 
-                num_streets=4,
-                blinds=blinds,
-                antes=0, 
-                raise_sizes='pot',
-                num_raises=float('inf'),
-                num_suits=4,
-                num_ranks=13,
-                num_hole_cards=2,
-                mandatory_num_hole_cards=0,
-                start_stack=200,
-                num_community_cards=[0, 3, 1, 1],
-                num_cards_for_hand=5
-            )
+            dealer = reset_dealer()
             continue
 
     return total_rewards / episodes
 
 
+# ===========================================================================================
+# Training for the agent in just this file - UNCOMMENT TO EXPERIMENT WITH THIS AGENT'S POLICY
+# ===========================================================================================
 # NUM_PLAYERS = 4
 # agent = MCCFR_N_Player_Complex()
 

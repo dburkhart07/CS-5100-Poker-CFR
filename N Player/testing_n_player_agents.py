@@ -54,23 +54,23 @@ class NPlayerGameSimulator:
         self.reward_history = defaultdict(list)
 
         self.agents = {
-            #'CFR': CFRNPlayerAgent(),
-            #'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
-            'Aggressive_Agent': AggressiveAgent(),
-            #'MCCFR_Basic_Reg': MCCFR_N_Player_Optimized_Reg(),
+            'CFR': CFRNPlayerAgent(),
+            'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
+            #'Aggressive_Agent': AggressiveAgent(),
+            'MCCFR_Basic_Reg': MCCFR_N_Player_Optimized_Reg(),
             'MCCFR_Complex': MCCFR_N_Player_Complex(),
             #'#Random_Agent': RandomAgent(),
         }
 
         # Train all agents that have training functions
-        # print("Training CFR agent...")
-        # train_cfr(self.agents['CFR'], num_players=num_players, iterations=train_iters)
+        print("Training CFR agent...")
+        train_cfr(self.agents['CFR'], num_players=num_players, iterations=train_iters)
 
-        # print("Training MCCFR Basic Bet agent...")
-        # train_mccfr_n_player_basic_bet(self.agents['MCCFR_Basic_Bet'], iterations=train_iters)
+        print("Training MCCFR Basic Bet agent...")
+        train_mccfr_n_player_basic_bet(self.agents['MCCFR_Basic_Bet'], iterations=train_iters)
 
-        # print("Training MCCFR Basic Reg agent...")
-        # train_mccfr_n_player_basic_reg(self.agents['MCCFR_Basic_Reg'], iterations=train_iters)
+        print("Training MCCFR Basic Reg agent...")
+        train_mccfr_n_player_basic_reg(self.agents['MCCFR_Basic_Reg'], iterations=train_iters)
 
         print("Training MCCFR Complex agent...")
         train_mccfr_n_player_complex(self.agents['MCCFR_Complex'], iterations=train_iters)
@@ -263,7 +263,7 @@ class NPlayerGameSimulator:
         plt.show()
 
 # Run simulation and plot
-n = 2
+n = 4
 simulator = NPlayerGameSimulator(num_players=n)
 print(f"\nStarting {n}-player simulation...")
 avg_rewards = simulator.simulate_games(episodes=20000)
