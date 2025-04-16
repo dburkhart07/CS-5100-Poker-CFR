@@ -10,25 +10,26 @@ class CFRNPlayerAgent:
         self.decay_rate = 0.95
         self.evaluator = clubs.poker.Evaluator(suits=4, ranks=13, cards_for_hand=5)
 
-    # Get the strategy for the agent based on the given information set
     def get_strategy(self, info_set):
-        # Create even probability strategy if not otherwise there
+        # Initialize new strategy and total strategy if new state
         if info_set not in self.strategy:
             self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
-        
-        # Get the regrets at the given information set (only keep positive ones)
+            self.strategy_sum[info_set] = np.zeros(len(self.actions))
+
+        # Get and normalize all positive regrets
         regrets = self.regrets.get(info_set, np.zeros(len(self.actions)))
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)
-        
-        # Create the new strategy based on the normalized positive regrets
+
         if normalizing_sum > 0:
             strategy = positive_regrets / normalizing_sum
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
-        
+
+        # Add new strategy to accumulated one and assign as new strategy
+        self.strategy_sum[info_set] += strategy
         self.strategy[info_set] = strategy
-        
+
         return strategy
 
     def select_action(self, info_set):

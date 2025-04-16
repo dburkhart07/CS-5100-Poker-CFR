@@ -16,10 +16,12 @@ class MCCFR_N_Player_Complex:
         self.opponent_profiles = {}
 
     def get_strategy(self, info_set):
+        # Initialize new strategy and total strategy if new state
         if info_set not in self.strategy:
             self.strategy[info_set] = np.ones(len(self.actions)) / len(self.actions)
             self.strategy_sum[info_set] = np.zeros(len(self.actions))
 
+        # Get and normalize all positive regrets
         regrets = self.regrets.get(info_set, np.zeros(len(self.actions)))
         positive_regrets = np.maximum(regrets, 0)
         normalizing_sum = np.sum(positive_regrets)
@@ -29,6 +31,7 @@ class MCCFR_N_Player_Complex:
         else:
             strategy = np.ones(len(self.actions)) / len(self.actions)
 
+        # Add new strategy to accumulated one and assign as new strategy
         self.strategy_sum[info_set] += strategy
         self.strategy[info_set] = strategy
 
