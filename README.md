@@ -32,6 +32,6 @@ For information on specific policies for each of the agents, see comments or rea
 More instructions are listed below on how to run files
 
 ### General Notes
-1) To get the ASCII GUI: GO into testing_n_player_agents.py and change the render parameter in play_episode to True
+1) To get the ASCII GUI: Go into testing_n_player_agents.py and change the render parameter in play_episode to True
 2) To run a simulation: adjust the n at the bottom of testing_n_player_agents.py, and make sure that, in the NPlayerGameSimulator class, self.agents is of length n, training any agent that needs training below.
 3) To run a single individual agent file, go to the bottom of it and uncomment that last few lines, and just run that file separately (NOTE: This reward meaning does not mean much, however, which is why it is recommended to use testing_n_player_agents.py instead).
