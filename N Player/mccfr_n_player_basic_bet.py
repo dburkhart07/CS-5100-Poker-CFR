@@ -5,11 +5,11 @@ from collections import defaultdict
 
 class MCCFR_N_Player_Optimized_Bet:
     def __init__(self, decay_rate=0.95, bucket_size=500, use_bluffing=True):
-        self.regrets = defaultdict(lambda: np.zeros(3))
-        self.strategy_sum = defaultdict(lambda: np.zeros(3))
-        self.strategy = defaultdict(lambda: np.ones(3)/3)
+        self.regrets = {}
+        self.strategy_sum = {}
+        self.strategy = {}
         self.actions = ['fold', 'call', 'raise']
-        self.opponent_tendencies = defaultdict(lambda: np.zeros(3))
+        self.opponent_tendencies = {}
         self.hand_eval_cache = {}
         self.decay_rate = decay_rate
         self.bucket_size = bucket_size
@@ -55,6 +55,10 @@ class MCCFR_N_Player_Optimized_Bet:
         return np.random.choice(self.actions, p=strategy)
 
     def update_regrets(self, info_set, action_idx, regret):
+        if info_set not in self.regrets:
+            self.regrets[info_set] = np.zeros(len(self.actions))
+            self.opponent_tendencies[info_set] = np.zeros(len(self.actions))
+
         self.regrets[info_set][action_idx] += regret
         self.opponent_tendencies[info_set] *= self.decay_rate
         self.opponent_tendencies[info_set][action_idx] += 1
