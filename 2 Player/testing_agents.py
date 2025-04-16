@@ -17,6 +17,7 @@ from mccfr_complex import MCCFR_Sampling_Agent as MCCFR_Complex
 from mccfr_complex import train_mccfr_sampling as train_mccfr_sampling
 
 
+# Random agent 
 class RandomAgent:
     def select_action(self, obs):
         return random.choice(['fold', 'call', 'raise'])
@@ -74,30 +75,33 @@ def play_head_to_head(agent1, agent2, episodes=1000):
             # Even turns played by CFR, odd by Other 
             agent = players[turn_tracker % 2]
 
-            # How CFR agent plays
-            if  isinstance(agent, Reg_CFR_Agent):
-                hole_cards = obs['hole_cards']
-                community_cards = obs['community_cards']
-                hand_strength = evaluator.evaluate(hole_cards, community_cards)
-                pot_size = obs['pot']
-                stacks = obs['stacks']
-                min_raise = obs['min_raise']
-                street_commits = obs['street_commits']
-                num_community_cards = len(obs['community_cards'])
-                if num_community_cards == 0:
-                    street = 'preflop'
-                elif num_community_cards == 3:
-                    street = 'flop'
-                elif num_community_cards == 4:
-                    street = 'turn'
-                else:
-                    street = 'river'
-                
+            # Extract relevant features
+            hole_cards = obs['hole_cards']
+            community_cards = obs['community_cards']
+            hand_strength = evaluator.evaluate(hole_cards, community_cards)
+            pot_size = obs['pot']
+            stacks = obs['stacks']
+            min_raise = obs['min_raise']
+            street_commits = obs['street_commits']
+            
+            num_community_cards = len(community_cards)
+            if num_community_cards == 0:
+                street = 'preflop'
+            elif num_community_cards == 3:
+                street = 'flop'
+            elif num_community_cards == 4:
+                street = 'turn'
+            else:
+                street = 'river'
+
+            # Separate play for each type of agent
+
+            if  isinstance(agent, Reg_CFR_Agent):  
                 info_set = (str(hole_cards), str(community_cards), pot_size, street, tuple(stacks), tuple(street_commits))
                 action = agent.select_action(info_set)
                 
                 if action == 'fold':
-                    bet = 0
+                    bet = -1
                 elif action == 'call':
                     bet = obs['call']
                 else:
@@ -105,34 +109,16 @@ def play_head_to_head(agent1, agent2, episodes=1000):
                     stack_size = obs['stacks'][0]
                     bet = min(stack_size, max(obs['min_raise'], pot_size // 2))
             
-            # How MCCFR Basic agent plays
-            elif isinstance(agent, MCCFR_Bet_Agent) or isinstance(agent, MCCFR_Reg_Agent):
-                hole_cards = obs['hole_cards']
-                community_cards = obs['community_cards']
-                hand_strength = evaluator.evaluate(hole_cards, community_cards)
-                pot_size = obs['pot']
-                stacks = obs['stacks']
-                min_raise = obs['min_raise']
-                street_commits = obs['street_commits']
-                
-                num_community_cards = len(community_cards)
-                if num_community_cards == 0:
-                    street = 'preflop'
-                elif num_community_cards == 3:
-                    street = 'flop'
-                elif num_community_cards == 4:
-                    street = 'turn'
-                else:
-                    street = 'river'
-                
+            elif isinstance(agent, MCCFR_Bet_Agent) or isinstance(agent, MCCFR_Reg_Agent):  
                 info_set = (str(hole_cards), str(community_cards), pot_size, street, tuple(stacks), tuple(street_commits))
-                action = agent.select_action(info_set, 1.0)
+                action = agent.select_action(info_set)
                 
                 if action == 'fold':
-                    bet = 0
+                    bet = -1
                 elif action == 'call':
                     bet = obs['call']
                 else:
+                    # Different betting for MCCFR Bet vs MCCFR Reg
                     if isinstance(agent, MCCFR_Bet_Agent):
                         bet = agent.determine_bet_size(hand_strength, pot_size, min_raise, stacks[0], street)
                     else:
@@ -140,35 +126,33 @@ def play_head_to_head(agent1, agent2, episodes=1000):
                         stack_size = obs['stacks'][0]
                         bet = min(stack_size, max(obs['min_raise'], pot_size // 2))
 
-            # How MCCFR Complex plays
             elif isinstance(agent, MCCFR_Complex):
-                hole_cards = obs['hole_cards']
-                community_cards = obs['community_cards']
-                hand_strength = evaluator.evaluate(hole_cards, community_cards)
-                pot_size = obs['pot']
-                stacks = obs['stacks']
-                min_raise = obs['min_raise']
-                street_commits = obs['street_commits']
-                
-                street = ['preflop', 'flop', 'turn', 'river'][len(community_cards) // 3]
                 info_set = (str(hole_cards), str(community_cards), pot_size, street, tuple(stacks), tuple(street_commits))
                 
                 action = agent.sample_action(info_set)
                 if action == 'fold':
-                    bet = 0
+                    bet = -1
                 elif action == 'call':
                     bet = obs['call']
                 else:
                     bet = agent.determine_bet_size(hand_strength, pot_size, min_raise, stacks[0], street)
 
-            # How the other agents play
+            # How the other agents play (random, aggressive, conservative, matching)
             else:
                 action = agent.select_action(obs)
-                bet = agent.determine_bet_size(obs) if action == 'raise' else (0 if action == 'fold' else obs['call'])
+                if action == 'fold':
+                    bet = -1
+                elif action == 'call':
+                    bet = obs['call']
+                else:
+                    bet = agent.determine_bet_size(obs)
 
+            # Advance the game
             obs, rewards, done = dealer.step(bet)
-            # Increment turn by 1
+            # Increment turn by 1 (other player's turn)
             turn_tracker += 1
+
+            # Distribute rewards when the game ends
             if all(done):
                 # Accumulate rewards for both agents
                 total_reward_agent1 += rewards[0]
@@ -180,20 +164,24 @@ def play_head_to_head(agent1, agent2, episodes=1000):
 
 
 
+# Train necessary agents
+train_iters = 30000
+
 cfr_agent_reg = Reg_CFR_Agent()
-train_reg_cfr(cfr_agent_reg, iterations=30000)
+train_reg_cfr(cfr_agent_reg, iterations=train_iters)
 
 # Initialize MCCFR agents
 mccfr_bet_agent = MCCFR_Bet_Agent()
-train_bet_mccfr(mccfr_bet_agent, iterations=30000)
+train_bet_mccfr(mccfr_bet_agent, iterations=train_iters)
 
 mccfr_reg_agent = MCCFR_Reg_Agent()
-train_reg_mccfr(mccfr_reg_agent, iterations=30000)
+train_reg_mccfr(mccfr_reg_agent, iterations=train_iters)
 
 mccfr_complex_agent = MCCFR_Complex()
-train_mccfr_sampling(mccfr_complex_agent, iterations=30000)
+train_mccfr_sampling(mccfr_complex_agent, iterations=train_iters)
 
 
+# Play a head-to-head game between two agents
 def game(agent1, agent2, name1, name2, iterations=1000):
     agent1_vs_agent2 = play_head_to_head(agent1, agent2, iterations)
     print(f'{name1} Agent vs {name2} Agent - {name1} Reward: {agent1_vs_agent2[0]} {name2} Reward: {agent1_vs_agent2[1]}')
@@ -206,28 +194,29 @@ matcher_opponent = MatchingAgent()
 aggressive_opponent = AggressiveAgent()
 
 
+game_episodes = 1000
 # CFR agents against the basic agents
-game(cfr_agent_reg, random_opponent, "CFR Reg", "Random", 10000)
-game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", 1000)
-game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", 1000)
-game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", 1000)
+game(cfr_agent_reg, random_opponent, "CFR Reg", "Random", game_episodes)
+game(cfr_agent_reg, conservative_opponent, "CFR Reg", "Conservative", game_episodes)
+game(cfr_agent_reg, matcher_opponent, "CFR Reg", "Calling", game_episodes)
+game(cfr_agent_reg, aggressive_opponent, "CFR Reg", "Aggressive", game_episodes)
 
 # MCCFR Agents versus Random
-game(mccfr_bet_agent, random_opponent, "MCCFR Bet", "Random", 10000)
-game(mccfr_reg_agent, random_opponent, "MCCFR Reg", "Random", 10000)
+game(mccfr_bet_agent, random_opponent, "MCCFR Bet", "Random", game_episodes)
+game(mccfr_reg_agent, random_opponent, "MCCFR Reg", "Random", game_episodes)
 
 # Basic MCCFR Agents versus CFR agents
-game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", 1000)
-game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", 1000)
+game(mccfr_bet_agent, cfr_agent_reg, "MCCFR Bet", "CFR Reg", game_episodes)
+game(mccfr_reg_agent, cfr_agent_reg, "MCCFR Reg", "CFR Reg", game_episodes)
 
 
 # MCCFR Agents against themselves
-game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", 1000)
+game(mccfr_bet_agent, mccfr_reg_agent, "MCCFR Bet", "MCCFR Reg", game_episodes)
 
 # Complex MCCFR Agent versus Random
-game(mccfr_complex_agent, random_opponent, "MCCFR Complex", "Random", 10000)
+game(mccfr_complex_agent, random_opponent, "MCCFR Complex", "Random", game_episodes)
 
 # Complex MCCFR Agent versus the basic MCCFR Agents
-game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", 1000)
-game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", 1000)
+game(mccfr_complex_agent, mccfr_bet_agent, "MCCFR Complex", "MCCFR Bet", game_episodes)
+game(mccfr_complex_agent, mccfr_reg_agent, "MCCFR Complex", "MCCFR Reg", game_episodes)
 
