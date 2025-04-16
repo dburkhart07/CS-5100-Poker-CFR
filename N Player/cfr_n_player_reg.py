@@ -199,7 +199,7 @@ def evaluate_against_random(agent, num_players=4, episodes=1000):
     return total_reward / episodes
 
 
-# NUM_PLAYERS = 4
+# NUM_PLAYERS = 2
 # agent = CFRNPlayerAgent()
 
 # print("Training CFR agent")

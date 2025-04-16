@@ -28,12 +28,7 @@ class RandomAgent:
     
     # Basic betting function based on state of the game
     def determine_bet_size(self, pot_size, min_raise, stack_size, street=None):
-        if street == 'preflop':
-            return min(stack_size, max(min_raise * 2, pot_size // 2))
-        elif street == 'flop':
-            return min(stack_size, max(min_raise * 1.5, pot_size // 3))
-        else:
-            return min(stack_size, max(min_raise, pot_size // 2))
+        return min(stack_size, max(min_raise, pot_size // 2))
 
 
 class AggressiveAgent:
@@ -48,7 +43,7 @@ class AggressiveAgent:
 
 
 class NPlayerGameSimulator:
-    def __init__(self, num_players=4, train_iters=1000):
+    def __init__(self, num_players=4, train_iters=10000):
         self.num_players = num_players
 
         # First player is small blind, second is big blind
@@ -61,6 +56,7 @@ class NPlayerGameSimulator:
         self.agents = {
             'CFR': CFRNPlayerAgent(),
             'MCCFR_Basic_Bet': MCCFR_N_Player_Optimized_Bet(),
+            'Aggressive_Agent': AggressiveAgent(),
             'MCCFR_Basic_Reg': MCCFR_N_Player_Optimized_Reg(),
             'MCCFR_Complex': MCCFR_N_Player_Complex(),
             'Random_Agent': RandomAgent(),
@@ -96,7 +92,7 @@ class NPlayerGameSimulator:
             num_ranks=13,
             num_hole_cards=2,
             mandatory_num_hole_cards=0,
-            start_stack=500,
+            start_stack=200,
             num_community_cards=[0, 3, 1, 1],
             num_cards_for_hand=5
         )
@@ -267,8 +263,8 @@ class NPlayerGameSimulator:
         plt.show()
 
 # Run simulation and plot
-n = 5
+n = 6
 simulator = NPlayerGameSimulator(num_players=n)
 print(f"\nStarting {n}-player simulation...")
-avg_rewards = simulator.simulate_games(episodes=10000)
+avg_rewards = simulator.simulate_games(episodes=20000)
 simulator.plot_average_rewards()
